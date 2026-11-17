@@ -2,7 +2,10 @@
   "A small hiccup renderer that patches the DOM in place.
   Children are matched by position: a child of the same tag is patched, any other is
   replaced. An element with `:data-keep true` keeps its children as they are, for children
-  that something else owns, such as a CodeMirror view or a toaster's toasts."
+  that something else owns, such as a CodeMirror view or a toaster's toasts. A prop key in
+  the `prop` namespace, such as `:prop/items`, sets a JS property instead of an attribute,
+  with the value converted to JS, and only when the value changed. A `:key` prop is not set
+  on the element: an element whose key changes is replaced, not patched."
   (:require [clojure.string :as str]))
 
 ;;; ── Prop helpers ──────────────────────────────────────────────────────────
@@ -11,6 +14,11 @@
   "Whether the prop key `k` is an event listener, such as `:on-click`."
   [k]
   (str/starts-with? (name k) "on-"))
+
+(defn- property-key?
+  "Whether the prop key `k` names a JS property, such as `:prop/items`."
+  [k]
+  (= "prop" (namespace k)))
 
 (defn- event-name
   "The DOM event name for the listener key `k`, without its `on-` prefix.
@@ -48,10 +56,13 @@
 
 (defn- set-prop!
   "Sets the prop `k` of `el` to `v`.
-  A listener key sets a listener. `nil` and `false` remove the attribute, `true` sets it
-  empty, and any other value sets it as a string."
+  A listener key sets a listener, and a property key sets the property to `v` as JS. For an
+  attribute, `nil` and `false` remove it, `true` sets it empty, and any other value sets it
+  as a string."
   [^js el k v]
   (cond
+    (= :key k)        nil
+    (property-key? k) (aset el (name k) (clj->js v))
     (on-key? k)  (set-listener! el k v)
     (nil? v)     (.removeAttribute el (name k))
     (true? v)    (.setAttribute el (name k) "")
@@ -128,9 +139,10 @@
   ;; Remove props that no longer exist
   (doseq [[k _] old-props]
     (when-not (contains? new-props k)
-      (if (on-key? k)
-        (remove-listener! el k)
-        (.removeAttribute el (name k)))))
+      (cond (= :key k)        nil
+            (property-key? k) (aset el (name k) nil)
+            (on-key? k)       (remove-listener! el k)
+            :else             (.removeAttribute el (name k)))))
   ;; Add / update changed props
   (doseq [[k v] new-props]
     (let [old-v (get old-props k)]
@@ -140,12 +152,13 @@
 (declare patch-children!)
 
 (defn- same-tag?
-  "Whether `dom-node` is an element with the tag of the hiccup vector `vnode`."
+  "Whether `dom-node` is an element with the tag and the `:key` of the hiccup vector `vnode`."
   [^js dom-node vnode]
   (and (= 1 (.-nodeType dom-node))
        (vector? vnode)
        (= (str/upper-case (name (first vnode)))
-          (.-tagName dom-node))))
+          (.-tagName dom-node))
+       (= (:key (get-stored-props dom-node)) (:key (second (parse-vnode vnode))))))
 
 (defn- text-node?
   "Whether `node` is a text node."

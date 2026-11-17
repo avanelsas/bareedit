@@ -15,7 +15,7 @@
   "The dialog for the first open question in the state `s`, or `nil` when there is none.
   Each button calls `dispatch` with `[:answer choice]`; see [[bare-edit.steps/ask]]."
   [s dispatch]
-  (let [{:keys [kind buffer]} (first (:questions s))
+  (let [{:keys [kind buffer path]} (first (:questions s))
         file   (model/file-name (get-in s [:buffers buffer :path] ""))
         answer (fn [choice] (fn [_] (dispatch [:answer choice])))]
     (case kind
@@ -38,7 +38,68 @@
         (button "danger" "Discard" (answer :discard))
         (button "primary" "Save" (answer :save))]]
 
+      :new-file
+      (let [problem (model/path-problem path)]
+        [:x-modal {:open true :label "New file" :size "sm"
+                   :on-x-modal-dismiss (answer :cancel)}
+         [:div {:slot "header"} "New file"]
+         [:x-form-field {:label "Path in the project" :value path :error (or problem "")
+                         :on-x-form-field-input (fn [^js e] (dispatch [:new-file-path (.. e -detail -value)]))
+                         :on-keydown (fn [^js e]
+                                       (when (= "Enter" (.-key e))
+                                         (.preventDefault e)
+                                         (dispatch [:answer :create])))}]
+         [:div {:slot "footer" :class "actions"}
+          (button "secondary" "Cancel" (answer :cancel))
+          [:x-button {:variant "primary" :disabled (boolean problem) :on-click (answer :create)} "Create"]]])
+
       nil)))
+
+(def palette-size
+  "How many files the file palette shows at most."
+  50)
+
+(defn palette-items
+  "The items of the open palette in the state `s`, as data for `x-command-palette`.
+  The file palette holds the best paths for the query, in rank order, which the palette
+  shows as given. The command palette holds every command it shows, and filters them itself."
+  [{:keys [palette paths]}]
+  (case (:kind palette)
+    :files    (for [p (model/rank-paths paths (:query palette) palette-size)]
+                {:id p :label p})
+    :commands (for [{:keys [id label palette?]} steps/commands
+                    :when (not (false? palette?))]
+                {:id (name id) :label label})
+    nil))
+
+(def palette-texts
+  "The label and placeholder of each kind of palette."
+  {:files    {:label "Go to file" :placeholder "File name or namespace"}
+   :commands {:label "Commands"   :placeholder "Command"}})
+
+(defn palette-view
+  "The open palette for the state `s`, whose choices call `dispatch`, or `nil` when none is open.
+  It is made new on each opening, and when it changes kind, so it starts empty, with its
+  input focused. The file
+  palette shows its items as given, since the editor ranks them. The palette is a view of
+  the state: its own pick and close are refused and sent to `dispatch` instead, so it opens
+  and closes only with the state. Escape reaches the page's key listener, which closes it,
+  so the palette's own Escape is off."
+  [{:keys [palette] :as s} dispatch]
+  (when palette
+    [:x-command-palette
+     {:key (:kind palette) :open true :close-on-escape "false"
+      :filter (if (= :files (:kind palette)) "none" "default")
+      :label (get-in palette-texts [(:kind palette) :label])
+      :placeholder (get-in palette-texts [(:kind palette) :placeholder])
+      :prop/items (palette-items s)
+      :on-x-command-palette-query-change (fn [^js e] (dispatch [:palette-query (.. e -detail -query)]))
+      :on-x-command-palette-select-request (fn [^js e]
+                                             (.preventDefault e)
+                                             (dispatch [:palette-pick (.. e -detail -item -id)]))
+      :on-x-command-palette-close-request (fn [^js e]
+                                            (.preventDefault e)
+                                            (dispatch [:palette-close]))}]))
 
 (defn tab-label
   "The tab text for the buffer `b`: its file name, marked when deleted or unsaved."
@@ -62,8 +123,8 @@
 
 (defn page
   "The page, as hiccup, for the state `s`, whose controls call `dispatch` with events.
-  It reads the `:paths`, `:expanded`, `:tabs`, `:buffers`, `:active`, `:conn` and
-  `:questions` of `s`."
+  It reads the `:paths`, `:expanded`, `:tabs`, `:buffers`, `:active`, `:conn`,
+  `:questions` and `:palette` of `s`."
   [{:keys [tabs buffers active paths expanded conn] :as s} dispatch]
   (let [active-b (get buffers active)]
     [:x-theme {:preset "default" :class "app"}
@@ -86,8 +147,8 @@
          [:div {:class "empty"} (if (= conn :closed) "Disconnected. Restart bare-edit." "Open a file from the tree.")])
        ;; hidden while the active file loads, so nothing typed lands in the previous file's text
        [:div {:id "editor" :data-keep true :style (if (:state active-b) "" "display:none")}]]]
-     ;; the toaster holds its toasts as children, so rendering keeps them (:data-keep), and
-     ;; it comes before the dialog, so a dialog appearing never moves it (render matches
-     ;; children by position)
+     ;; render matches children by position, so each overlay has a fixed slot and one
+     ;; appearing never moves another; the toaster keeps its toasts (:data-keep)
      [:x-toaster {:id "toaster" :data-keep true}]
-     (question-view s dispatch)]))
+     [:div {:class "slot"} (question-view s dispatch)]
+     [:div {:class "slot"} (palette-view s dispatch)]]))

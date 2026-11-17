@@ -10,6 +10,8 @@
             [bare-edit.render :as render]
             [bare-edit.steps :as steps]
             [baredom.exports.x-button :as x-button]
+            [baredom.exports.x-command-palette :as x-command-palette]
+            [baredom.exports.x-form-field :as x-form-field]
             [baredom.exports.x-modal :as x-modal]
             [baredom.exports.x-split-pane :as x-split-pane]
             [baredom.exports.x-tab :as x-tab]
@@ -37,13 +39,15 @@
 
 (defmulti run-effect!
   "Carries out the `effect` a step returned, dispatched on its first element.
-  `[:send request]` sends the request on the WebSocket, and `[:toast type message]` shows a
-  toast."
+  There is one method for each kind in [[bare-edit.steps/effect-kinds]]."
   (fn [effect] (first effect)))
 
 (defmethod run-effect! :send [[_ req]]
   (when-let [^js ws @socket]
     (.send ws (p/encode req))))
+
+(defmethod run-effect! :focus-editor [_]
+  (some-> ^js (:view @editor-view) .focus))
 
 (defmethod run-effect! :toast [[_ type message]]
   (when-let [^js t (js/document.getElementById "toaster")]
@@ -112,7 +116,8 @@
   "Defines the BareDOM custom elements the page uses."
   []
   (doseq [init [x-theme/init x-split-pane/init x-tree/init x-tabs/init x-tab/init
-                x-modal/init x-button/init x-toast/init x-toaster/init]]
+                x-modal/init x-button/init x-toast/init x-toaster/init
+                x-command-palette/init x-form-field/init]]
     (init)))
 
 (defn- connect!
@@ -130,8 +135,11 @@
   "Starts the app and connects to the server.
   It registers the components, renders the page, mounts the editor and renders again on
   every state change. It listens for keys, for window focus, and for leaving the page,
-  which warns while a buffer has unsaved changes."
+  which warns while a buffer has unsaved changes. An effect kind without a method is
+  reported on the console."
   []
+  (doseq [k steps/effect-kinds :when (nil? (get-method run-effect! k))]
+    (js/console.error "run-effect! has no method for" (str k)))
   (register-components!)
   (let [app (js/document.getElementById "app")]
     (render/render! app #(page/page @state dispatch!))

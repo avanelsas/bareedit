@@ -13,11 +13,10 @@
            border-right: 1px solid var(--x-color-border); }
   .main { display: flex; flex-direction: column; height: 100%; min-width: 0; }
   .main x-tabs { flex: none; border-bottom: 1px solid var(--x-color-border); padding: 0 4px; }
-  /* x-tab's underline variant keeps the dark-mode selected border on three sides; this keeps it to the underline. */
-  .main x-tab { --x-tab-selected-border-color: transparent; --x-tab-radius: 0; }
   #editor { flex: 1; min-height: 0; overflow: hidden; }
   .empty { padding: 24px; color: var(--x-color-text-muted); }
   .actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .slot { display: contents; }
 </style>
 </head>
 <body>

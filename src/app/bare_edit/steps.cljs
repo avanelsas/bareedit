@@ -19,7 +19,8 @@
   `:next-id` numbers requests, unique within the page, and `:next-buffer` numbers buffers.
   `:pending` maps a request id to its request until the reply arrives. `:buffers` maps a
   buffer id to its buffer, and `:tabs` holds buffer ids in order. `:questions` is the
-  queue of open questions; the page shows the first, see [[ask]]. `:conn` is
+  queue of open questions; the page shows the first, see [[ask]]. `:palette` is the open
+  palette, `{:kind :query}` with `:kind` `:files` or `:commands`, or `nil`. `:conn` is
   `:connecting`, `:open` or `:closed`."
   {:conn :connecting
    :next-id 1
@@ -30,7 +31,14 @@
    :buffers {}
    :tabs []
    :active nil
-   :questions []})
+   :questions []
+   :palette nil})
+
+(def effect-kinds
+  "Every kind of effect a step can return, as the first element of the effect.
+  `[:send request]` sends a request, `[:toast type message]` shows a toast,
+  and `[:focus-editor]` gives the editor the keyboard focus."
+  #{:send :toast :focus-editor})
 
 ;; ── Results ─────────────────────────────────────────────────────────────────
 
@@ -103,14 +111,18 @@
   - `{:kind :disk-change :buffer id :disk disk}` asks whether to keep the buffer's text or
     take `disk`, the file's `:text` and `:version`, which changed while it had unsaved
     changes.
+  - `{:kind :new-file :path path}` asks for the path of a new file, about no buffer.
 
   A question of the same kind about the same buffer is replaced where it stands, so a file
-  that changes twice is asked about once, with its latest text."
+  that changes twice is asked about once, with its latest text. Asking closes an open
+  palette, so the question is the only thing that takes keys."
   [s question]
   (let [same? #(and (= (:kind %) (:kind question)) (= (:buffer %) (:buffer question)))]
-    (update s :questions (fn [qs] (if (some same? qs)
-                                    (mapv #(if (same? %) question %) qs)
-                                    (conj qs question))))))
+    (-> s
+        (assoc :palette nil)
+        (update :questions (fn [qs] (if (some same? qs)
+                                      (mapv #(if (same? %) question %) qs)
+                                      (conj qs question)))))))
 
 (defn close-buffer
   "Returns the state `s` without the buffer `id`, its tab and the questions about it.
@@ -199,13 +211,20 @@
 
 (def commands
   "The editor's commands, as plain data.
-  Each has an `:id`, a `:label` and `:keys` in CodeMirror's key syntax, a string or a
-  vector of strings. [[bare-edit.keys/key-index]] reads this list, and [[run-command]]
-  runs its entries."
-  [{:id :save      :label "Save"         :keys "Mod-s"}
-   {:id :close-tab :label "Close tab"    :keys "Alt-w"}
-   {:id :next-tab  :label "Next tab"     :keys "Alt-]"}
-   {:id :prev-tab  :label "Previous tab" :keys "Alt-["}])
+  Each has an `:id`, a `:label` and optional `:keys` in CodeMirror's key syntax, a string or
+  a vector of strings. A command with `:palette? false` is left out of the command palette.
+  [[bare-edit.keys/key-index]] reads this list, the command palette shows it, and
+  [[run-command]] runs its entries."
+  [{:id :save              :label "Save"              :keys "Mod-s"}
+   {:id :save-all          :label "Save all"          :keys "Mod-Alt-s"}
+   {:id :close-tab         :label "Close tab"         :keys "Alt-w"}
+   {:id :next-tab          :label "Next tab"          :keys "Alt-]"}
+   {:id :prev-tab          :label "Previous tab"      :keys "Alt-["}
+   {:id :file-palette      :label "Go to file"        :keys "Mod-p"}
+   {:id :command-palette   :label "Show all commands" :keys ["Mod-Shift-p" "F1"] :palette? false}
+   {:id :close-palette     :label "Close the palette" :keys "Escape" :palette? false}
+   {:id :new-file          :label "New file"}
+   {:id :refresh-file-tree :label "Refresh file tree"}])
 
 (defmulti run-command
   "Returns the result `r` after running `command`, dispatched on its `:id`."
@@ -216,6 +235,39 @@
 (defmethod run-command :next-tab  [r _] (change r step-tab 1))
 (defmethod run-command :prev-tab  [r _] (change r step-tab -1))
 
+(defmethod run-command :save-all [{s :state :as r} _]
+  (reduce save-buffer r (for [id (:tabs s) :when (unsaved? (get-in s [:buffers id]))] id)))
+
+(def command-by-name
+  "The [[commands]] by the name of their `:id`, as a palette item gives it back."
+  (into {} (map (juxt (comp name :id) identity)) commands))
+
+(defn- close-palette
+  "Returns the result `r` with the palette closed and the editor given the focus."
+  [r]
+  (-> r (change assoc :palette nil) (update :fx conj [:focus-editor])))
+
+(defn- open-palette
+  "Returns the result `r` with the palette of `kind` open, with an empty query.
+  The page makes a new palette for each kind, so switching kind starts empty too. The
+  palette of `kind` that is open already stays as it is."
+  [{s :state :as r} kind]
+  (if (= kind (get-in s [:palette :kind]))
+    r
+    (change r assoc :palette {:kind kind :query ""})))
+
+(defmethod run-command :file-palette    [r _] (open-palette r :files))
+(defmethod run-command :command-palette [r _] (open-palette r :commands))
+
+(defmethod run-command :close-palette [{s :state :as r} _]
+  (if (:palette s) (close-palette r) r))
+
+(defmethod run-command :new-file [{s :state :as r} _]
+  (change r ask {:kind :new-file
+                 :path (model/folder-of (get-in s [:buffers (:active s) :path]))}))
+
+(defmethod run-command :refresh-file-tree [r _] (send r :paths {}))
+
 ;; ── Replies ─────────────────────────────────────────────────────────────────
 
 (defmulti on-reply
@@ -223,7 +275,8 @@
   It is dispatched on the request's `:op`. `:paths` stores the path list. `:read` gives
   each open buffer of a file its disk value; when it fails, the tabs still loading close. `:save` records the sent text as the disk
   text and runs the request's `:then` (`[:close-tab id]` closes the tab, asking again if it
-  has unsaved changes by then), or reads the file again on `:conflict`. Any
+  has unsaved changes by then), and a save that created the file asks for the path list
+  again. It reads the file again on `:conflict`. Any
   other reply that is not `:ok` shows its message as a toast."
   (fn [_r req _reply] (:op req)))
 
@@ -248,15 +301,19 @@
                                                  id))))
         (toast :error message))))
 
-(defmethod on-reply :save [r {:keys [path text then]} {:keys [status version message]}]
+(defmethod on-reply :save [r {:keys [path text then] sent-version :version}
+                           {:keys [status version message]}]
   (case status
     ;; the disk now holds the text that was sent, which may differ from the buffer's text
     :ok       (let [[follow-up id] then
                     r (change r (fn [s] (reduce #(update-in %1 [:buffers %2] assoc :disk-text text
                                                             :disk-version version :deleted? false)
                                                 s (buffer-ids-for s path))))]
-                ;; through close-tab, which asks again if text was typed after the save went out
-                (cond-> r (= :close-tab follow-up) (close-tab id)))
+                (cond-> r
+                  ;; a save that created the file adds it to the path list
+                  (= :absent sent-version) (send :paths {})
+                  ;; through close-tab, which asks again if text was typed after the save went out
+                  (= :close-tab follow-up) (close-tab id)))
     :conflict (send r :read {:paths [path]})       ; the read then asks "keep mine or take disk"
     (toast r :error message)))
 
@@ -274,7 +331,16 @@
   - `[:command command]` runs a command, unless a dialog is open.
   - `[:editor-state old new]` stores an edit in the buffer it started from.
   - `[:answer choice]` answers the first open question, see [[ask]]. A close question takes
-    `:save`, `:discard` or `:cancel`, and a changed-on-disk question `:keep` or `:take`."
+    `:save`, `:discard` or `:cancel`, a changed-on-disk question `:keep` or `:take`, and a
+    new-file question `:create` or `:cancel`.
+  - `[:new-file-path text]` stores the path typed in the new-file question.
+  - `[:palette-query text]` stores the query typed in the open palette.
+  - `[:palette-pick id]` runs what was picked: a file opens, a command runs. Either way the
+    palette closes and the editor gets the focus first, unless the pick opened a palette.
+    Nothing runs while a question is open.
+  - `[:palette-close]` closes the palette, as on a click outside it. The palette never
+    closes itself: the page refuses its own close and its own pick, so the state alone
+    decides whether it is open."
   (fn [_r event] (first event)))
 
 (defmethod step :connected [r _]
@@ -297,18 +363,30 @@
       :event (cond-> r (= :out (:event msg)) (toast :info (:text msg)))
       r)))
 
+(defn- add-buffer
+  "Returns the state `s` with `buffer` given the next id and opened in a new, active tab."
+  [s buffer]
+  (let [id (:next-buffer s)]
+    (-> s
+        (update :next-buffer inc)
+        (assoc-in [:buffers id] (assoc buffer :id id))
+        (update :tabs conj id)
+        (assoc :active id))))
+
+(defn- open-path
+  "Returns the result `r` with `path` in the active tab.
+  A path that is open switches to its tab. Any other opens in a new tab that loads it."
+  [{s :state :as r} path]
+  (if-let [id (first (buffer-ids-for s path))]
+    (change r assoc :active id)
+    (-> r
+        (change add-buffer {:path path :loading? true})
+        (send :read {:paths [path]}))))
+
 (defmethod step :open-file [{s :state :as r} [_ path]]
-  (cond
-    (not (some #{path} (:paths s)))             r      ; a folder in the tree
-    (first (buffer-ids-for s path))             (change r assoc :active (first (buffer-ids-for s path)))
-    :else (let [id (:next-buffer s)]
-            (-> r
-                (change #(-> %
-                             (update :next-buffer inc)
-                             (assoc-in [:buffers id] {:id id :path path :loading? true})
-                             (update :tabs conj id)
-                             (assoc :active id)))
-                (send :read {:paths [path]})))))
+  (if (some #{path} (:paths s))
+    (open-path r path)
+    r))                                            ; a folder in the tree
 
 (defmethod step :select-tab [r [_ id]]
   (change r assoc :active id))
@@ -328,16 +406,58 @@
                 (assoc-in s [:buffers id :state] new)
                 s))))
 
+(defn- new-file
+  "Returns the result `r` with a tab for `path`, a file that need not exist yet.
+  An open file switches to its tab, and a file in the path list opens. Any other path opens
+  an empty buffer that is not on disk, which the first save creates."
+  [{s :state :as r} path]
+  (if (or (seq (buffer-ids-for s path)) (some #{path} (:paths s)))
+    (open-path r path)
+    (change r add-buffer {:path path :disk-text "" :disk-version :absent
+                          :state (editor/new-state "")})))
+
 (defmethod step :answer [{s :state :as r} [_ choice]]
-  (if-let [{:keys [kind buffer disk]} (first (:questions s))]
-    (let [r (change r update :questions #(vec (rest %)))]
-      (case kind
-        :close       (case choice
-                       :save    (save-buffer r buffer [:close-tab buffer])
-                       :discard (change r close-buffer buffer)
-                       :cancel  r)
-        :disk-change (change r update-in [:buffers buffer]
-                             (fn [b] (case choice
-                                       :keep (assoc b :disk-text (:text disk) :disk-version (:version disk))
-                                       :take (with-disk b disk))))))
+  (let [{:keys [kind buffer disk path] :as question} (first (:questions s))]
+    (cond
+      (nil? question) r
+      ;; a new file with a path problem keeps its question open
+      (and (= [:new-file :create] [kind choice]) (model/path-problem path)) r
+      :else
+      (let [r (change r update :questions #(vec (rest %)))]
+        (case kind
+          :new-file    (case choice
+                         :create (new-file r (model/normalize-path path))
+                         :cancel r)
+          :close       (case choice
+                         :save    (save-buffer r buffer [:close-tab buffer])
+                         :discard (change r close-buffer buffer)
+                         :cancel  r)
+          :disk-change (change r update-in [:buffers buffer]
+                               (fn [b] (case choice
+                                         :keep (assoc b :disk-text (:text disk) :disk-version (:version disk))
+                                         :take (with-disk b disk)))))))))
+
+(defmethod step :new-file-path [{s :state :as r} [_ text]]
+  (if (= :new-file (:kind (first (:questions s))))
+    (change r assoc-in [:questions 0 :path] text)
     r))
+
+(defmethod step :palette-query [{s :state :as r} [_ text]]
+  (if (:palette s) (change r assoc-in [:palette :query] text) r))
+
+(defmethod step :palette-pick [{s :state :as r} [_ id]]
+  (let [kind (get-in s [:palette :kind])]
+    (if (or (nil? kind) (blocked? s))
+      r
+      ;; the pick runs with the palette closed; the editor gets the focus first, unless the
+      ;; pick opened a palette, as "Go to file" does
+      (let [r (case kind
+                :files    (open-path (change r assoc :palette nil) id)
+                :commands (if-let [c (command-by-name id)]
+                            (run-command (change r assoc :palette nil) c)
+                            r))]
+        (cond-> r
+          (nil? (get-in r [:state :palette])) (update :fx #(into [[:focus-editor]] %)))))))
+
+(defmethod step :palette-close [{s :state :as r} _]
+  (if (:palette s) (close-palette r) r))
