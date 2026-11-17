@@ -1,0 +1,21 @@
+{:paths ["src/server" "src/shared" "resources"]
+ :tasks
+ {:requires ([babashka.fs :as fs])
+  start {:doc "Start the editor for the current folder"
+         :task (apply (requiring-resolve 'bare-edit.main/-main) *command-line-args*)}
+  test  {:doc "Run the server and shared tests under bb"
+         :extra-paths ["test" "dev"]
+         :requires ([clojure.test :as t])
+         :task (let [nss '[bare-edit.protocol-test bare-edit.paths-test bare-edit.files-test bare-edit.server-test
+                           bare-edit.docstrings-test]]
+                 (apply require nss)
+                 (let [{:keys [fail error]} (apply t/run-tests nss)]
+                   (System/exit (if (zero? (+ fail error)) 0 1))))}
+  cljs-test {:doc "Run the shared tests under ClojureScript (Node)"
+             :task (do (shell "npx shadow-cljs compile test")
+                       (shell "node out/test.js"))}
+  build {:doc "Build the browser bundle into resources/public/js"
+         :task (shell "npx shadow-cljs release app")}
+  docstrings {:doc "Check every docstring against .claude/rules/docstrings.md; exits 1 on a problem"
+              :extra-paths ["dev"]
+              :task (apply (requiring-resolve 'bare-edit.docstrings/-main) *command-line-args*)}}}

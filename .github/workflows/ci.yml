@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    name: Lint, Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - uses: DeLaGuardo/setup-clojure@13.4
+        with:
+          cli: latest
+          bb: latest
+          clj-kondo: latest
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+          key: deps-${{ hashFiles('deps.edn', 'shadow-cljs.edn') }}
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: clj-kondo --lint src test dev
+
+      - name: Docstrings
+        run: bb docstrings
+
+      - name: Server and shared tests
+        run: bb test
+
+      - name: Browser and shared tests
+        run: bb cljs-test
+
+      - name: Build the app
+        run: npx shadow-cljs release app

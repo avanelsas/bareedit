@@ -1,0 +1,10 @@
+node_modules/
+.shadow-cljs/
+.cpcache/
+out/
+resources/public/js/
+# a throwaway experiment, kept on disk only
+spike/
+
+# local notes for Claude Code
+CLAUDE.local.md
