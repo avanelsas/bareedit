@@ -37,8 +37,9 @@
 (def effect-kinds
   "Every kind of effect a step can return, as the first element of the effect.
   `[:send request]` sends a request, `[:toast type message]` shows a toast,
-  and `[:focus-editor]` gives the editor the keyboard focus."
-  #{:send :toast :focus-editor})
+  `[:focus-editor]` gives the editor the keyboard focus, and `[:edit id]` runs the editor
+  command `id` on the editor, see [[bare-edit.editor/run-command!]]."
+  #{:send :toast :focus-editor :edit})
 
 ;; ── Results ─────────────────────────────────────────────────────────────────
 
@@ -213,6 +214,8 @@
   "The editor's commands, as plain data.
   Each has an `:id`, a `:label` and optional `:keys` in CodeMirror's key syntax, a string or
   a vector of strings. A command with `:palette? false` is left out of the command palette.
+  A command with `:scope :editor` works on the text: its keys act only while the editor has
+  the focus, and it runs on the editor, see [[bare-edit.editor/run-command!]].
   [[bare-edit.keys/key-index]] reads this list, the command palette shows it, and
   [[run-command]] runs its entries."
   [{:id :save              :label "Save"              :keys "Mod-s"}
@@ -224,11 +227,36 @@
    {:id :command-palette   :label "Show all commands" :keys ["Mod-Shift-p" "F1"] :palette? false}
    {:id :close-palette     :label "Close the palette" :keys "Escape" :palette? false}
    {:id :new-file          :label "New file"}
-   {:id :refresh-file-tree :label "Refresh file tree"}])
+   {:id :refresh-file-tree :label "Refresh file tree"}
+   {:id :find              :label "Find and replace"   :keys "Mod-f"         :scope :editor}
+   {:id :toggle-comment    :label "Toggle comment"     :keys "Mod-/"         :scope :editor}
+   {:id :show-completions  :label "Show completions"   :keys "Ctrl-Space"    :scope :editor}
+   {:id :slurp-forward     :label "Slurp forward"      :keys "Ctrl-Shift-0"  :scope :editor}
+   {:id :slurp-backward    :label "Slurp backward"     :keys "Ctrl-Shift-9"  :scope :editor}
+   {:id :barf-forward      :label "Barf forward"       :keys "Ctrl-Shift-]"  :scope :editor}
+   {:id :barf-backward     :label "Barf backward"      :keys "Ctrl-Shift-["  :scope :editor}
+   {:id :unwrap            :label "Unwrap"             :keys "Alt-s"         :scope :editor}
+   {:id :kill              :label "Kill to end of form" :keys "Ctrl-k"       :scope :editor}
+   {:id :expand-selection  :label "Expand selection"   :keys "Alt-ArrowUp"   :scope :editor}
+   {:id :shrink-selection  :label "Shrink selection"   :keys "Alt-ArrowDown" :scope :editor}
+   {:id :reindent          :label "Reindent the current form"               :scope :editor}])
+
+(defn command-dispatch
+  "The value [[run-command]] dispatches `command` on.
+  It is `::editor` for a command with `:scope :editor`, since all of those run on the
+  editor the same way, and otherwise the command's `:id`."
+  [_r command]
+  (if (= :editor (:scope command)) ::editor (:id command)))
 
 (defmulti run-command
-  "Returns the result `r` after running `command`, dispatched on its `:id`."
-  (fn [_r command] (:id command)))
+  "Returns the result `r` after running `command`, dispatched by [[command-dispatch]]."
+  command-dispatch)
+
+(defmethod run-command ::editor [{s :state :as r} {:keys [id]}]
+  ;; on the editor only when it shows a loaded buffer
+  (if (get-in s [:buffers (:active s) :state])
+    (update r :fx conj [:edit id])
+    r))
 
 (defmethod run-command :save      [r _] (if-let [id (:active (:state r))] (save-buffer r id) r))
 (defmethod run-command :close-tab [r _] (if-let [id (:active (:state r))] (close-tab r id) r))

@@ -49,6 +49,9 @@
 (defmethod run-effect! :focus-editor [_]
   (some-> ^js (:view @editor-view) .focus))
 
+(defmethod run-effect! :edit [[_ id]]
+  (some-> ^js (:view @editor-view) (editor/run-command! id)))
+
 (defmethod run-effect! :toast [[_ type message]]
   (when-let [^js t (js/document.getElementById "toaster")]
     (.toast t #js {:type (name type) :message message :timeoutMs 6000})))
@@ -61,12 +64,14 @@
   Last, the view is given the active buffer's editor state, even when the state did not
   change: an edit no buffer took leaves the view holding a state of its own, and this puts
   the buffer's back. Syncing comes last because it can start the next event, as when
-  restoring the scroll position, and that event must not run inside this one."
+  restoring the scroll position, and that event must not run inside this one. It syncs
+  with the state as it is then, not as this event left it, because an effect such as
+  `[:edit id]` runs an event of its own on the way."
   [event]
   (let [{s :state fx :fx} (steps/step (steps/result @state) event)]
     (when-not (identical? s @state) (reset! state s))
     (run! run-effect! fx)
-    (sync-view! s)))
+    (sync-view! @state)))
 
 ;; ── Keys ───────────────────────────────────────────────────────────────────
 
@@ -81,14 +86,18 @@
 (defn on-keydown
   "Runs the command bound to the key event `e`, if any, and stops the browser handling it.
   The page listens in the bubble phase, so the editor's own keys go first; an event it
-  handled is skipped. Nothing runs while a dialog is open."
+  handled is skipped. Nothing runs while a dialog is open. A command with `:scope :editor`
+  runs from its key only while the focus is in the editor, its search panel included, so
+  elsewhere the key keeps its usual meaning."
   [^js e]
   (when-not (or (.-defaultPrevented e) (steps/blocked? @state))
     (when-let [c (key-index (keys/event->key mac? {:key (.-key e) :code (.-code e) :alt (.-altKey e)
                                                    :ctrl (.-ctrlKey e) :meta (.-metaKey e)
                                                    :shift (.-shiftKey e)}))]
-      (.preventDefault e)
-      (dispatch! [:command c]))))
+      (when (or (not= :editor (:scope c))
+                (some-> ^js (:view @editor-view) .-dom (.contains js/document.activeElement)))
+        (.preventDefault e)
+        (dispatch! [:command c])))))
 
 ;; ── View ────────────────────────────────────────────────────────────────────
 

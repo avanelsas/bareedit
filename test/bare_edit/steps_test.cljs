@@ -164,8 +164,9 @@
       (is (= {:state connected :fx []} (run connected [:answer :keep]))))))
 
 (deftest every-command-has-a-method
-  (doseq [{:keys [id]} steps/commands]
-    (is (some? (get-method steps/run-command id)) (str "run-command has no method for " id))))
+  (doseq [c steps/commands]
+    (is (some? (get-method steps/run-command (steps/command-dispatch nil c)))
+        (str "run-command has no method for " (:id c)))))
 
 (defn- command
   "The command with the id `id`."
@@ -258,3 +259,13 @@
     (doseq [c steps/commands
             :let [r (run (assoc s :palette {:kind :files :query ""}) [:command c])]]
       (is (every? steps/effect-kinds (map first (:fx r))) (str (:id c) " returns an unknown effect")))))
+
+(deftest editor-commands-run-on-the-editor
+  (let [slurp (command :slurp-forward)]
+    (is (= [[:edit :slurp-forward]] (:fx (run (opened "(ns a)") [:command slurp]))))
+    (testing "with no loaded buffer, nothing runs"
+      (is (= [] (:fx (run connected [:command slurp])))))
+    (testing "picked in the command palette, the editor gets the focus first"
+      (is (= [[:focus-editor] [:edit :slurp-forward]]
+             (:fx (run (assoc (opened "(ns a)") :palette {:kind :commands :query ""})
+                       [:palette-pick "slurp-forward"])))))))
