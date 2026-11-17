@@ -162,3 +162,99 @@
           (is (= [] (:questions (steps/close-buffer (:state r) 1)))))))
     (testing "answering with no question open changes nothing"
       (is (= {:state connected :fx []} (run connected [:answer :keep]))))))
+
+(deftest every-command-has-a-method
+  (doseq [{:keys [id]} steps/commands]
+    (is (some? (get-method steps/run-command id)) (str "run-command has no method for " id))))
+
+(defn- command
+  "The command with the id `id`."
+  [id]
+  (first (filter #(= id (:id %)) steps/commands)))
+
+(deftest palettes
+  (let [r (run (opened "(ns a)") [:command (command :file-palette)])
+        s (:state r)]
+    (is (= {:kind :files :query ""} (:palette s)))
+    (is (= [] (:fx r)))
+    (testing "the query is stored, and switching palettes starts empty"
+      (is (= {:kind :files :query "core"} (:palette (:state (run s [:palette-query "core"])))))
+      (is (= {:kind :commands :query ""}
+             (:palette (:state (run s [:palette-query "core"] [:command (command :command-palette)]))))))
+    (testing "picking a file closes the palette, focuses the editor and opens the file"
+      (let [r (run s [:palette-pick "src/b.clj"])]
+        (is (nil? (get-in r [:state :palette])))
+        (is (= [:focus-editor] (first (:fx r))))
+        (is (= "src/b.clj" (get-in r [:state :buffers 2 :path])))))
+    (testing "picking a command runs it after the focus"
+      (let [r (run (assoc-in s [:palette :kind] :commands) [:palette-pick "new-file"])]
+        (is (= [[:focus-editor]] (:fx r)))
+        (is (= [{:kind :new-file :path "src/"}] (get-in r [:state :questions])))))
+    (testing "Escape closes the palette, and does nothing when none is open"
+      (is (nil? (:palette (:state (run s [:command (command :close-palette)])))))
+      (is (= {:state connected :fx []} (run connected [:command (command :close-palette)]))))
+    (testing "the palette closing itself closes it in the state"
+      (is (nil? (:palette (:state (run s [:palette-close]))))))
+    (testing "a command picked in the command palette can open the file palette, which keeps the keys"
+      (let [r (run (assoc s :palette {:kind :commands :query "go"}) [:palette-pick "file-palette"])]
+        (is (= {:kind :files :query ""} (get-in r [:state :palette])))
+        (is (= [] (:fx r)))))))
+
+(deftest new-files
+  (let [s (:state (run (opened "(ns a)") [:command (command :new-file)]))]
+    (is (= [{:kind :new-file :path "src/"}] (:questions s)) "the path starts in the active file's folder")
+    (testing "a path with a problem keeps the question open"
+      (is (= s (:state (run s [:new-file-path "../x.clj"] [:answer :create] [:new-file-path "src/"])))))
+    (testing "a new path opens an empty buffer that is not on disk"
+      (let [s2 (:state (run s [:new-file-path "src/new/c.clj"] [:answer :create]))
+            b  (get-in s2 [:buffers 2])]
+        (is (= [] (:questions s2)))
+        (is (= ["src/new/c.clj" "" :absent false] [(:path b) (:disk-text b) (:disk-version b) (steps/unsaved? b)]))
+        (is (= 2 (:active s2)))
+        (testing "and its first save creates it, then asks for the path list"
+          (let [r (run s2 [:command (command :save)])
+                [_ sent] (last (:fx r))]
+            (is (= :absent (:version sent)))
+            (is (= #{:paths} (set (map (comp :op second) (:fx (run (:state r) (reply-to r :ok {:version "v1"})))))))))))
+    (testing "a path in the path list opens that file"
+      (is (= "src/b.clj" (get-in (run s [:new-file-path "src/b.clj"] [:answer :create]) [:state :buffers 2 :path]))))
+    (testing "a path is normalized first, so ./src/b.clj opens src/b.clj"
+      (is (= "src/b.clj" (get-in (run s [:new-file-path "./src//b.clj"] [:answer :create]) [:state :buffers 2 :path]))))
+    (testing "the path of an open file switches to its tab"
+      (is (= 1 (:active (:state (run s [:new-file-path "src/a.clj"] [:answer :create]))))))))
+
+(deftest save-all
+  (let [s (-> (opened "(ns a)") (typed "(ns a) 1")
+              (assoc-in [:buffers 2] {:id 2 :path "src/b.clj" :disk-text "b" :disk-version "v"
+                                      :state (editor/new-state "b")})
+              (update :tabs conj 2))
+        r (run s [:command (command :save-all)])]
+    (is (= [["src/a.clj" :save]] (map (juxt :path :op) (map second (:fx r))))
+        "only the unsaved buffer is saved")))
+
+(deftest every-effect-is-a-known-kind
+  (let [s  (opened "(ns a)")
+        rs [(run s [:command (command :file-palette)] [:palette-pick "src/b.clj"])
+            (run s [:command (command :save)])
+            (run s [:disconnected])
+            (run s [:command (command :refresh-file-tree)])]]
+    (is (every? steps/effect-kinds (map first (mapcat :fx rs))))))
+
+(deftest a-question-closes-the-palette
+  (let [s (:state (run (typed (opened "(ns a)") "(ns a) mine") [:command (command :file-palette)]))]
+    (testing "a file changed on disk while the palette is open closes the palette"
+      (let [r (run s [:focus])
+            r (run (:state r) (reply-to r :ok {:files {"src/a.clj" {:text "(ns a) disk" :version "v2"}}}))]
+        (is (= :disk-change (:kind (first (get-in r [:state :questions])))))
+        (is (nil? (get-in r [:state :palette])))))
+    (testing "a pick while a question is open does nothing"
+      (let [blocked (-> s
+                        (steps/ask {:kind :close :buffer 1})
+                        (assoc :palette {:kind :commands :query ""}))]
+        (is (= {:state blocked :fx []} (run blocked [:palette-pick "new-file"])))))))
+
+(deftest every-command-returns-known-effects
+  (let [s (typed (opened "(ns a)") "(ns a) 1")]
+    (doseq [c steps/commands
+            :let [r (run (assoc s :palette {:kind :files :query ""}) [:command c])]]
+      (is (every? steps/effect-kinds (map first (:fx r))) (str (:id c) " returns an unknown effect")))))

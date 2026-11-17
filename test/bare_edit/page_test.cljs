@@ -62,3 +62,23 @@
           h (render s (atom []))]
       (is (= 1 (count (elements h :x-modal))))
       (is (= ["Take disk" "Keep mine"] (map text (elements h :x-button)))))))
+
+(defn- fake-event
+  "A DOM event stand-in with `detail`, which records a call to `preventDefault` in `prevented`."
+  [detail prevented]
+  #js {:detail (clj->js detail) :preventDefault #(reset! prevented true)})
+
+(deftest the-palette-is-a-view-of-the-state
+  (let [events    (atom [])
+        prevented (atom false)
+        el        (first (elements (render (assoc state :palette {:kind :commands :query ""}) events)
+                                   :x-command-palette))]
+    (testing "a pick is refused to the palette and dispatched, so the state alone closes it"
+      ((:on-x-command-palette-select-request (second el)) (fake-event {:item {:id "save"}} prevented))
+      (is @prevented)
+      (is (= [[:palette-pick "save"]] @events)))
+    (testing "a close is refused to the palette and dispatched"
+      (reset! events []) (reset! prevented false)
+      ((:on-x-command-palette-close-request (second el)) (fake-event {} prevented))
+      (is @prevented)
+      (is (= [[:palette-close]] @events)))))
