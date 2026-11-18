@@ -6,9 +6,22 @@
 <title>BareEditClj</title>
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; }
-  #app, .app { display: block; height: 100%; }
-  .app { --bar-height: 40px; --brand-blue: #79bde8; background: var(--x-color-bg); color: var(--x-color-text); font-family: var(--x-font-family, system-ui, sans-serif); }
-  .panes { height: 100%; }
+  #app { display: block; height: 100%; }
+  .app { display: flex; flex-direction: column; height: 100%; --bar-height: 40px; --brand-blue: #79bde8;
+         background: var(--x-color-bg); color: var(--x-color-text);
+         font-family: var(--x-font-family, system-ui, sans-serif); }
+  .panes { flex: 1; min-height: 0; }
+  .status-bar { flex: none; display: flex; align-items: center; gap: 16px; height: 26px;
+                padding: 0 12px; border-top: 1px solid var(--x-color-border);
+                font-size: 0.8rem; color: var(--x-color-text-muted); white-space: nowrap; overflow: hidden; }
+  .status-bar .project { color: var(--x-color-text); font-weight: 600; }
+  /* a dot's tone comes from the page's conn-states and repl-states */
+  .status-bar .dot::before { content: "●"; margin-right: 4px; }
+  .status-bar .dot.ok::before   { color: var(--x-color-success); }
+  .status-bar .dot.busy::before { color: var(--x-color-warning); }
+  .status-bar .dot.bad::before  { color: var(--x-color-danger); }
+  .status-bar .dot.idle::before { opacity: 0.4; }
+  .status-bar .fill { flex: 1; }
   .files { display: flex; flex-direction: column; height: 100%; min-width: 0; }
   /* the three bars share one height and one bottom line, so their lines meet */
   .bar { flex: none; height: var(--bar-height); box-sizing: border-box;

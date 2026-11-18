@@ -245,6 +245,13 @@
   [^js editor-state]
   (.toString (.-doc editor-state)))
 
+(defn cursor-position
+  "The line and column of the cursor in `editor-state`, as `[line column]`, both from 1."
+  [^js editor-state]
+  (let [head (.. editor-state -selection -main -head)
+        line (.lineAt (.-doc editor-state) head)]
+    [(.-number line) (inc (- head (.-from line)))]))
+
 (defn- form-between
   "The text of `state` from `from` to `to`, as `{:code :line}` with the line it starts on.
   Returns `nil` when the text is blank."

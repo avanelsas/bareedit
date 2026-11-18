@@ -173,3 +173,15 @@
       (is (nil? (:style (second h)))))
     (testing "a font the file does not name is not set"
       (is (= "--x-font-size-base:12px;" (page/font-style {:font-size 12}))))))
+
+(deftest the-status-bar
+  (let [events (atom [])
+        s      (assoc state :project "demo" :repl {:clj {:status :no-runtime :message "No runtime."}})
+        bar    (page/status-bar s #(swap! events conj %))]
+    (is (= "democonnectedClojure: no JS runtimeClojureScript: not used yetClojureLn 1, Col 1Commands" (text bar)))
+    (testing "a REPL's message is its tooltip"
+      (is (= "No runtime." (some #(when (= "dot bad" (:class (second %))) (:title (second %)))
+                                 (elements bar :span)))))
+    (testing "the button opens the command palette"
+      (click (first (elements bar :x-button)))
+      (is (= [[:command (steps/command-by-name "command-palette")]] @events)))))

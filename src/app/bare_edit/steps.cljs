@@ -27,9 +27,12 @@
   `:results-open?` says whether the column shows, and `:unfolded` holds the ids of the
   entries shown in full. `:conn` is `:connecting`, `:open` or `:closed`. `:config` is the
   user's look and feel, `{:preset :font-mono :font-size}` from the server, or `nil` until
-  it arrives."
+  it arrives, and `:project` the project folder's name, the same way. `:repl` holds the
+  last thing heard from the REPL of each session kind, see [[record-repl]]."
   {:conn :connecting
    :config nil
+   :project nil
+   :repl {}
    :next-id 1
    :next-buffer 1
    :pending {}
@@ -209,15 +212,28 @@
   [s id f & args]
   (update s :results (fn [rs] (mapv #(if (= id (:id %)) (apply f % args) %) rs))))
 
+(defn record-repl
+  "Returns the state `s` with what an evaluation of the file at `path` says about its REPL.
+  `reply` gives the `:status`, such as `:running` while it waits, and the `:message`. It is
+  the last thing heard, from a send or a reply, so a reply to an older evaluation can come
+  after a newer one started. It is kept per session kind under `:repl`, apart from the
+  results, so clearing the results keeps it."
+  [s path {:keys [status message]}]
+  (if-let [kind (p/kind-for path)]
+    (assoc-in s [:repl kind] {:status status :message message})
+    s))
+
 (defn- send-with-entry
   "Returns the result `r` with a request for `op` with `args` to send, and `entry` for it.
   The entry gets the request's id and the status `:running`, see [[add-entry]], and the
-  column shows. Without a connection, [[send]] adds its toast and there is no entry."
+  column shows. An evaluation marks its REPL `:running` too, see [[record-repl]]. Without a
+  connection, [[send]] adds its toast and there is no entry."
   [{s :state :as r} op args entry]
   (if (connected? s)
     (-> r
         (send op args)
-        (change #(-> % (add-entry (assoc entry :id (:next-id s) :status :running)) show-results)))
+        (change #(cond-> (-> % (add-entry (assoc entry :id (:next-id s) :status :running)) show-results)
+                   (#{:eval :load-file} op) (record-repl (:path args) {:status :running}))))
     (send r op args)))
 
 (defn- active-buffer
@@ -437,6 +453,9 @@
     (reduce #(toast %1 :warning %2) (change r assoc :config config) problems)
     (toast r :error message)))
 
+(defmethod on-reply :project [r _req {:keys [status name]}]
+  (cond-> r (= :ok status) (change assoc :project name)))
+
 (defmethod on-reply :paths [r _req {:keys [status paths message]}]
   (if (= :ok status)
     (change r assoc :paths paths)
@@ -460,8 +479,14 @@
   [r reply]
   (change r update-entry (:id reply) merge (dissoc reply :id)))
 
-(defmethod on-reply :eval      [r _req reply] (fill-entry r reply))
-(defmethod on-reply :load-file [r _req reply] (fill-entry r reply))
+(defn- evaluated
+  "Returns the result `r` after `reply` to the evaluation of the file at `path`.
+  It fills in the results entry and records what the reply says about the REPL."
+  [r path reply]
+  (-> r (fill-entry reply) (change record-repl path reply)))
+
+(defmethod on-reply :eval      [r {:keys [path]} reply] (evaluated r path reply))
+(defmethod on-reply :load-file [r {:keys [path]} reply] (evaluated r path reply))
 (defmethod on-reply :lookup    [r _req reply] (fill-entry r reply))
 
 (defmethod on-reply :completions [r {:keys [token]} {:keys [status candidates]}]
@@ -522,9 +547,10 @@
   (fn [_r event] (first event)))
 
 (defmethod step :connected [{s :state :as r} _]
-  ;; the look and feel is asked for until it arrives, so its problems show once
+  ;; each is asked for until it arrives, so the look and feel's problems show once
   (cond-> (-> r (change assoc :conn :open) refresh)
-    (nil? (:config s)) (send :config {})))
+    (nil? (:config s))  (send :config {})
+    (nil? (:project s)) (send :project {})))
 
 (defmethod step :disconnected [{s :state :as r} _]
   (-> r
@@ -533,7 +559,8 @@
                          [:completed (:token req) nil]))
       ;; no reply comes any more, so no entry may stay running
       (change (fn [s] (-> s
-                          (assoc :conn :closed :pending {})
+                          ;; nothing is known about the REPLs until the next evaluation
+                          (assoc :conn :closed :pending {} :repl {})
                           (update :results (fn [rs] (mapv #(cond-> % (= :running (:status %))
                                                              (assoc :status :unavailable
                                                                     :message "Disconnected before the reply came."))
@@ -675,6 +702,6 @@
 
 (defmethod step :complete [{s :state :as r} [_ {:keys [prefix token]}]]
   (let [{:keys [path state]} (active-buffer s)]
-    (if (and state (model/clojure-file? path) (connected? s))
+    (if (and state (= :clj (p/kind-for path)) (connected? s))
       (send r :completions {:prefix prefix :ns (model/ns-of (editor/text state))} {:token token})
       (update r :fx conj [:completed token nil]))))

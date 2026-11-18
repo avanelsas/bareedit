@@ -5,6 +5,16 @@
   (:require #?(:clj [clojure.edn :as edn]
                :cljs [cljs.reader :as edn])))
 
+(defn kind-for
+  "The session kind for the file at `path`, or `nil` for a file that is not evaluated.
+  It is `:clj` for `.clj` and `.cljc` files and `:cljs` for `.cljs` files. A `.cljc` file
+  goes to Clojure, and its reader conditionals take their `:clj` branch."
+  [path]
+  (condp re-find (or path "")
+    #"\.cljs$"      :cljs
+    #"\.cljc?$"     :clj
+    nil))
+
 (def statuses
   "The closed set of reply statuses. A `:running` status exists only in the browser."
   #{:ok :error :conflict :interrupted :no-runtime :unavailable})
@@ -28,7 +38,8 @@
    :interrupt   {:request {:eval :int}                                   :reply #{}}
    :completions {:request {:prefix :string :ns :ns}                      :reply #{:candidates}}
    :lookup      {:request {:path :string :sym :string :ns :ns}           :reply #{:info}}
-   :config      {:request {}                                             :reply #{:config :problems}}})
+   :config      {:request {}                                             :reply #{:config :problems}}
+   :project     {:request {}                                             :reply #{:name}}})
 
 (def events
   "The events the server sends unasked."

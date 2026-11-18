@@ -1,21 +1,11 @@
 (ns bare-edit.repl
   "The pure side of talking to nREPL.
-  It decides which session kind and port file a file uses, builds the messages sent, and folds
+  It decides which port file a session kind uses, builds the messages sent, and folds
   the stream of messages for one request into one reply. An nREPL message is a map with
   string keys, as bencode gives it. A ClojureScript session runs in shadow-cljs, whose
   replies are read from its own signals, see [[fold-cljs-eval]]."
   (:require [clojure.edn :as edn]
             [clojure.string :as str]))
-
-(defn kind-for
-  "The session kind for the file at `path`, or `nil` for a file that is not evaluated.
-  It is `:clj` for `.clj` and `.cljc` files and `:cljs` for `.cljs` files. A `.cljc` file
-  goes to Clojure, and its reader conditionals take their `:clj` branch."
-  [path]
-  (condp re-find (or path "")
-    #"\.cljs$"      :cljs
-    #"\.cljc?$"     :clj
-    nil))
 
 (def print-options
   "The nREPL options that pretty-print values at 80 columns.

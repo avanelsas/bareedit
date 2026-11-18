@@ -5,6 +5,7 @@
   render it from a state value and check which event each control sends."
   (:require [bare-edit.editor :as editor]
             [bare-edit.model :as model]
+            [bare-edit.protocol :as p]
             [bare-edit.steps :as steps]
             [clojure.string :as str]))
 
@@ -213,6 +214,54 @@
   "The editor's name in the style of the BareDOM logo: `<BareEdit>`, with blue brackets."
   [:span {:class "brand"} [:span {:class "bracket"} "<"] "BareEdit" [:span {:class "bracket"} ">"]])
 
+(def kind-names
+  "The name of each session kind, as the status bar shows it."
+  {:clj "Clojure" :cljs "ClojureScript"})
+
+(def conn-states
+  "What the status bar shows for each state of the connection: its words and its tone.
+  The tone, `ok`, `busy`, `bad` or `idle`, is the class that colours the dot."
+  {:connecting {:words "connecting"   :tone "busy"}
+   :open       {:words "connected"    :tone "ok"}
+   :closed     {:words "disconnected" :tone "bad"}})
+
+(def repl-states
+  "What the status bar shows for the last status heard from a REPL: its words and its tone.
+  `nil` is a REPL that has not been used. An evaluation that failed or was interrupted
+  still had a REPL that answered, so it is ready."
+  {nil          {:words "not used yet"  :tone "idle"}
+   :running     {:words "busy"          :tone "busy"}
+   :ok          {:words "ready"         :tone "ok"}
+   :error       {:words "ready"         :tone "ok"}
+   :interrupted {:words "ready"         :tone "ok"}
+   :no-runtime  {:words "no JS runtime" :tone "bad"}
+   :unavailable {:words "unavailable"   :tone "bad"}})
+
+(defn status-bar
+  "The bar under the panes for the state `s`, whose palette button calls `dispatch`.
+  On the left it shows the project's name, the connection and the last thing heard from
+  the REPL of each session kind, see [[repl-states]], with its message as a tooltip. On the
+  right it shows the active file's session kind, the cursor's line and column, and a button
+  that opens the command palette."
+  [{:keys [project conn repl buffers active]} dispatch]
+  (let [{:keys [path state]} (get buffers active)
+        [line col]           (some-> state editor/cursor-position)]
+    [:div {:class "status-bar"}
+     [:span {:class "project"} (or project "")]
+     (let [{:keys [words tone]} (conn-states conn)]
+       [:span {:class (str "dot " tone)} words])
+     (for [kind [:clj :cljs]
+           :let [{:keys [status message]} (get repl kind)
+                 {:keys [words tone]}     (repl-states status)]]
+       [:span {:class (str "dot " tone) :title (or message "")}
+        (str (kind-names kind) ": " words)])
+     [:span {:class "fill"}]
+     [:span {:class "kind"} (or (kind-names (p/kind-for path)) "")]
+     [:span {:class "cursor"} (if line (str "Ln " line ", Col " col) "")]
+     [:x-button {:variant "ghost" :size "sm" :title "Show all commands (Mod-Shift-p or F1)"
+                 :on-click (fn [_] (dispatch [:command (steps/command-by-name "command-palette")]))}
+      "Commands"]]))
+
 (def tree-json
   "Returns the `x-tree` items for the path list `paths`, as JSON.
   The items are derived from the paths, so they are not stored in the state. The last
@@ -238,7 +287,8 @@
 (defn page
   "The page, as hiccup, for the state `s`, whose controls call `dispatch` with events.
   It reads the `:paths`, `:expanded`, `:tabs`, `:buffers`, `:active`, `:conn`,
-  `:questions`, `:palette`, `:results`, `:results-open?` and `:config` of `s`. Until the
+  `:questions`, `:palette`, `:results`, `:results-open?` and `:config` of `s`, and what
+  [[status-bar]] reads. Until the
   look and feel arrives, the `x-theme` uses its own preset. The results column is always
   on the page, so the editor never moves; when closed, its pane takes no room."
   [{:keys [tabs buffers active paths expanded conn results-open? config] :as s} dispatch]
@@ -272,6 +322,7 @@
        (when (empty? tabs)
          [:div {:class "empty"} (if (= conn :closed) "Disconnected. Restart bare-edit." "Open a file from the tree.")])]
       [:div {:slot "end" :class "results-pane" :style fonts} (when results-open? (results-view s dispatch))]]]
+     (status-bar s dispatch)
      ;; render matches children by position, so each overlay has a fixed slot and one
      ;; appearing never moves another; the toaster keeps its toasts (:data-keep)
      [:x-toaster {:id "toaster" :data-keep true}]
