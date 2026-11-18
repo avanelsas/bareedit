@@ -42,9 +42,46 @@
     (is (= [3 3] (let [^js s3 (.-state (editor/edit s2 :shrink-selection))]
                    [(.. s3 -selection -main -from) (.. s3 -selection -main -to)])))))
 
-(deftest every-editor-command-is-known-to-the-editor
-  (doseq [{:keys [id scope]} steps/commands :when (= :editor scope)]
-    (is (editor/command? id) (str id " has no editor command"))))
+(deftest every-editor-command-works-on-the-text
+  (doseq [{:keys [id scope]} steps/commands :when (editor/command? id)]
+    (is (= :editor scope) (str id " runs on the editor but its keys work everywhere"))))
+
+(defn- form-text
+  "The `:code` that `f` finds in `text`, with the cursor where `|` is."
+  [f text]
+  (:code (f (at text))))
+
+(deftest forms-at-the-cursor
+  (testing "the form that ends at the cursor, or else the innermost form around it"
+    (are [text want] (= want (form-text editor/form-at text))
+      "(+ 1 (* 2 3)|)"   "(* 2 3)"
+      "(+ 1 (* 2| 3))"   "2"
+      "(+ 1 (* |2 3))"   "2"
+      "(a b)|\n(c d)"     "(a b)"
+      "(inc |)"           "(inc )"))
+  (testing "the top-level form"
+    (are [text want] (= want (form-text editor/top-level-form-at text))
+      "(defn f [x]\n  (* x |2))\n(g)" "(defn f [x]\n  (* x 2))"
+      "(a)\n(b |c)"                     "(b c)"))
+  (testing "between forms there is none"
+    (is (nil? (editor/top-level-form-at (at "(a)\n\n|\n(b)")))))
+  (testing "a form knows the line it starts on"
+    (is (= 2 (:line (editor/top-level-form-at (at "(a)\n(b |c)")))))))
+
+(deftest symbols-at-the-cursor
+  (are [text want] (= want (editor/symbol-at (at text)))
+    "(ma|p inc xs)"     "map"
+    "(map| inc xs)"     "map"
+    "(str/jo|in xs)"    "str/join"
+    "(f :ke|y)"         nil
+    "(f \"te|xt\")"     nil))
+
+(deftest highlighting-text
+  (let [pieces (editor/highlighted "{:a \"b\" :c 1}")]
+    (testing "the pieces join to the text"
+      (is (= "{:a \"b\" :c 1}" (apply str (map first pieces)))))
+    (testing "keywords, strings and numbers get a class, and the rest none"
+      (is (= ":a\"b\":c1" (apply str (keep (fn [[p cls]] (when cls p)) pieces)))))))
 
 (deftest no-key-has-two-sources
   (doseq [mac? [true false]]

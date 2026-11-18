@@ -269,3 +269,89 @@
       (is (= [[:focus-editor] [:edit :slurp-forward]]
              (:fx (run (assoc (opened "(ns a)") :palette {:kind :commands :query ""})
                        [:palette-pick "slurp-forward"])))))))
+
+(defn- at-cursor
+  "Returns the state `s` with buffer 1 holding `text`, with the cursor where `|` is."
+  [s text]
+  (let [i  (.indexOf text "|")
+        st (editor/new-state (str (subs text 0 i) (subs text (inc i))))]
+    (assoc-in s [:buffers 1 :state] (.-state (.update st #js {:selection #js {:anchor i}})))))
+
+(deftest evaluating
+  (let [s (at-cursor (opened "") "(ns a.b)\n(+ 1 (* 2 3)|)")
+        r (run s [:command (command :eval-form)])
+        [[_ req]] (:fx r)]
+    (testing "the form at the cursor is sent in the buffer's namespace, with its line"
+      (is (= {:op :eval :path "src/a.clj" :ns "a.b" :line 2 :code "(* 2 3)"} (dissoc req :id))))
+    (testing "an entry for it is running at the top of the results"
+      (is (= {:id (:id req) :kind :eval :path "src/a.clj" :line 2 :form "(* 2 3)" :status :running}
+             (first (get-in r [:state :results])))))
+    (testing "its reply fills the entry in, whatever the status"
+      (let [r2 (run (:state r) (reply-to r :error {:message "boom" :err "trace"}))]
+        (is (= {:status :error :message "boom" :err "trace"}
+               (select-keys (first (get-in r2 [:state :results])) [:status :message :err])))
+        (is (= [] (:fx r2)) "no toast: the entry shows it")))
+    (testing "the top-level form"
+      (is (= "(+ 1 (* 2 3))" (:code (second (first (:fx (run s [:command (command :eval-top-form)]))))))))
+    (testing "the file sends the buffer's text"
+      (is (= {:op :load-file :path "src/a.clj" :text "(ns a.b)\n(+ 1 (* 2 3))"}
+             (dissoc (second (first (:fx (run s [:command (command :eval-file)])))) :id))))
+    (testing "with no connection, no entry is added"
+      (let [r (run (assoc s :conn :closed) [:command (command :eval-form)])]
+        (is (= [] (get-in r [:state :results])))
+        (is (= :toast (ffirst (:fx r))))))))
+
+(deftest interrupting
+  (let [s (-> (opened "")
+              (steps/add-entry {:id 7 :kind :eval :status :running})
+              (steps/add-entry {:id 8 :kind :eval :status :ok})
+              (steps/add-entry {:id 9 :kind :doc :status :running}))]
+    (testing "the command interrupts the newest evaluation still running"
+      (is (= {:op :interrupt :eval 7} (dissoc (second (first (:fx (run s [:command (command :interrupt)])))) :id))))
+    (testing "an entry's button interrupts that evaluation"
+      (is (= 8 (:eval (second (first (:fx (run s [:interrupt 8]))))))))
+    (testing "an interrupt's message shows as a toast"
+      (let [r (run s [:interrupt 7])]
+        (is (= [[:toast :info "careful"]] (:fx (run (:state r) (reply-to r :ok {:message "careful"})))))))
+    (testing "the newest evaluation still running is found"
+      (is (= 7 (steps/newest-running s)))
+      (is (nil? (steps/newest-running (opened "")))))
+    (testing "with nothing running, nothing is sent"
+      (is (= [] (:fx (run (opened "") [:command (command :interrupt)])))))))
+
+(deftest showing-docs
+  (let [r (run (at-cursor (opened "") "(ns a.b)\n(ma|p inc xs)") [:command (command :show-docs)])
+        [[_ req]] (:fx r)]
+    (is (= {:op :lookup :path "src/a.clj" :sym "map" :ns "a.b"} (dissoc req :id)))
+    (is (= :doc (:kind (first (get-in r [:state :results])))))
+    (let [r2 (run (:state r) (reply-to r :ok {:info {:name "map"}}))]
+      (is (= {:name "map"} (:info (first (get-in r2 [:state :results]))))))))
+
+(deftest the-results-column
+  (let [s (-> (opened "") (steps/add-entry {:id 7 :kind :eval :path "src/a.clj" :line 3 :status :running}))]
+    (testing "a disconnect leaves no entry running"
+      (is (= :unavailable (:status (first (get-in (run s [:disconnected]) [:state :results]))))))
+    (testing "output that belongs to no evaluation gets an entry"
+      (let [r (run s [:message (p/encode (p/event :out {:text "hi\n"}))])]
+        (is (= {:kind :out :out "hi\n"} (dissoc (first (get-in r [:state :results])) :id)))))
+    (testing "clearing empties it, and toggling hides it"
+      (is (= [] (get-in (run s [:command (command :clear-results)]) [:state :results])))
+      (is (false? (get-in (run s [:command (command :toggle-results)]) [:state :results-open?]))))
+    (testing "a new entry shows it again"
+      (let [closed (assoc s :results-open? false)]
+        (is (true? (get-in (run closed [:command (command :eval-file)]) [:state :results-open?])))
+        (is (true? (get-in (run closed [:message (p/encode (p/event :out {:text "x"}))]) [:state :results-open?])))))
+    (testing "an entry can be shown in full, and folded again"
+      (let [r (run s [:unfold 7])]
+        (is (= #{7} (get-in r [:state :unfolded])))
+        (is (= #{} (get-in (run (:state r) [:unfold 7]) [:state :unfolded])))))
+    (testing "the entries record what happened, and nothing about how they show"
+      (is (= (:results s) (get-in (run s [:unfold 7]) [:state :results]))))
+    (testing "it keeps the newest entries only"
+      (let [many (reduce #(steps/add-entry %1 {:id %2 :kind :out}) s (range 200))]
+        (is (= steps/max-results (count (:results many))))
+        (is (= 199 (:id (first (:results many)))))))
+    (testing "jumping goes to the line when the file is open, or opens it"
+      (is (= [[:goto 3]] (:fx (run s [:jump-to 7]))))
+      (let [s2 (steps/add-entry s {:id 8 :kind :eval :path "src/b.clj" :line 1})]
+        (is (= :read (:op (second (first (:fx (run s2 [:jump-to 8])))))))))))

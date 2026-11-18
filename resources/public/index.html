@@ -17,6 +17,31 @@
   .empty { padding: 24px; color: var(--x-color-text-muted); }
   .actions { display: flex; gap: 8px; justify-content: flex-end; }
   .slot { display: contents; }
+  .inner { height: 100%; }
+  .inner.closed { --x-split-pane-divider-size: 0; }
+  .results-pane { height: 100%; min-width: 0; border-left: 1px solid var(--x-color-border); }
+  .inner.closed .results-pane { border: none; }
+  .results { display: flex; flex-direction: column; height: 100%; }
+  .results-bar { flex: none; display: flex; align-items: center; justify-content: space-between;
+                 padding: 4px 8px; border-bottom: 1px solid var(--x-color-border);
+                 color: var(--x-color-text-muted); }
+  .entries { flex: 1; overflow: auto; }
+  .entry { border-bottom: 1px solid var(--x-color-border); padding: 6px 8px; }
+  .entry-head { display: flex; gap: 6px; align-items: baseline; font-size: 0.85em;
+                color: var(--x-color-text-muted); white-space: nowrap; overflow: hidden; }
+  .entry-head.jumps { cursor: pointer; }
+  .entry-head.jumps:hover .title { color: var(--x-color-text); }
+  .entry-head .title { overflow: hidden; text-overflow: ellipsis;
+                       font-family: var(--x-font-family-mono, monospace); }
+  .mark.ok { color: var(--x-color-success); }
+  .mark.error, .mark.unavailable, .mark.no-runtime { color: var(--x-color-danger); }
+  .mark.interrupted, .mark.running { color: var(--x-color-warning); }
+  .entry-body pre { margin: 4px 0 0; white-space: pre-wrap; word-break: break-word;
+                    font-family: var(--x-font-family-mono, monospace); font-size: 0.9em; }
+  .entry-body .err { color: var(--x-color-danger); }
+  .entry-body .message { margin-top: 4px; color: var(--x-color-danger); font-size: 0.9em; }
+  .entry-body x-button { margin-top: 4px; }
+  .doc code { font-family: var(--x-font-family-mono, monospace); font-weight: bold; }
 </style>
 </head>
 <body>
