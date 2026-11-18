@@ -163,10 +163,20 @@
   [result key]
   (some #(get % key) (:msgs result)))
 
+(defn- load-printer!
+  "Loads the printer of [[bare-edit.repl/print-options]] in the REPL of `client`.
+  It evaluates `nil` with those options in `session` on the connection `conn`. nREPL loads
+  the printer on its first use, without a lock, so two sessions that both use it first can
+  each find it half loaded and fail. Loading it here, while connecting, happens once,
+  before any browser session evaluates."
+  [client conn session]
+  (ask client conn (merge {"op" "eval" "session" session "code" "nil"} repl/print-options)))
+
 (defn- open!
   "Opens a connection for `client` to the REPL at `port`.
   It reads the REPL's operations, and its Java version and attach flag in a session that is
-  closed again. The connection is published only when complete. Returns `{:conn conn}` or
+  closed again, after [[load-printer!]] ran in it. The connection is published only when
+  complete. Returns `{:conn conn}` or
   a failure."
   [client port]
   (let [socket (Socket.)]
@@ -178,6 +188,7 @@
         (doto (Thread. #(read-loop! client conn)) (.setDaemon true) (.start))
         (let [ops    (answer (ask client conn {"op" "describe"}) "ops")
               probe  (answer (ask client conn {"op" "clone"}) "new-session")
+              _      (when probe (load-printer! client conn probe))
               props  (when probe
                        (answer (ask client conn {"op" "eval" "session" probe
                                                  "code" (str "[(System/getProperty \"java.specification.version\")"

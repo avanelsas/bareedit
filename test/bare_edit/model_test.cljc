@@ -86,3 +86,11 @@
   (is (= "(defn f [x]" (model/form-head "(defn f [x]\n  x)" 50)))
   (is (= "(abc…" (model/form-head "(abcdef)" 4)))
   (is (= "" (model/form-head nil 10))))
+
+(deftest clojure-files
+  (are [path want] (= want (model/clojure-file? path))
+    "src/a.clj"  true
+    "src/a.cljc" true
+    "src/a.cljs" false
+    "deps.edn"   false
+    nil          false))

@@ -8,6 +8,7 @@
   - `[:send request]` sends the request on the WebSocket.
   - `[:toast type message]` shows a toast.
   - `[:goto line]` moves the cursor to the start of `line` in the editor.
+  - `[:completed token candidates]` answers the editor's completion request `token`.
 
   [[bare-edit.app/dispatch!]] stores the state once and then runs the effects, so a step
   never touches the atom, the socket or the page."
@@ -45,8 +46,10 @@
   `[:send request]` sends a request, `[:toast type message]` shows a toast,
   `[:focus-editor]` gives the editor the keyboard focus, and `[:edit id]` runs the editor
   command `id` on the editor, see [[bare-edit.editor/run-command!]]. `[:goto line]` moves
-  the cursor to `line` in the active buffer and gives the editor the focus."
-  #{:send :toast :focus-editor :edit :goto})
+  the cursor to `line` in the active buffer and gives the editor the focus.
+  `[:completed token candidates]` answers the completion request `token` of the editor
+  with nREPL's candidates, or with `nil` for the words of the open file."
+  #{:send :toast :focus-editor :edit :goto :completed})
 
 ;; ── Results ─────────────────────────────────────────────────────────────────
 
@@ -73,19 +76,19 @@
 (defn send
   "Returns the result `r` with a request for the operation `op` with `args` to send.
   The request gets the next id and is kept in `:pending` until its reply arrives, so the
-  reply can be handled together with it. `then`, when given, is what to do after a reply
-  that is `:ok`, such as `[:close-tab id]`. It is kept with the pending request as `:then`
-  and never sent, since it belongs to the browser. Without a connection, a toast says so
-  instead."
+  reply can be handled together with it. `local`, when given, is a map of keys that belong
+  to the browser, such as a save's `:then` or a completion's `:token`. They are kept with
+  the pending request and never sent; the reply of each operation reads its own. Without a
+  connection, a toast says so instead."
   ([r op args] (send r op args nil))
-  ([{s :state :as r} op args then]
+  ([{s :state :as r} op args local]
    (if-not (connected? s)
      (toast r :error "Not connected to bare-edit. Restart it to keep editing.")
      (let [req (p/request op (:next-id s) args)]
        (-> r
            (change #(-> %
                         (update :next-id inc)
-                        (assoc-in [:pending (:id req)] (cond-> req then (assoc :then then)))))
+                        (assoc-in [:pending (:id req)] (merge req local))))
            (update :fx conj [:send req]))))))
 
 ;; ── Buffers ─────────────────────────────────────────────────────────────────
@@ -259,7 +262,8 @@
 
 (defn save-buffer
   "Returns the result `r` with a save of the buffer `id` to send.
-  `then` is what to do once the save succeeds, as in [[send]]. A second save of the same
+  `then` is what to do once the save succeeds, such as `[:close-tab id]`, kept with the
+  pending request as `:then`, see [[send]]. A second save of the same
   file is refused with a toast while the first waits for its reply, since it would be sent
   with the old version and conflict; its `then` is dropped with it. A missing or loading
   buffer leaves `r` unchanged."
@@ -270,7 +274,7 @@
        (or (nil? b) (:loading? b)) r
        (saving? s (:path b))       (toast r :info (str "Still saving " (model/file-name (:path b)) "."))
        :else (send r :save {:path (:path b) :text (buffer-text b) :version (:disk-version b)}
-                   then)))))
+                   (when then {:then then}))))))
 
 (defn close-tab
   "Returns the result `r` with the tab of the buffer `id` closed.
@@ -415,7 +419,8 @@
   text and runs the request's `:then` (`[:close-tab id]` closes the tab, asking again if it
   has unsaved changes by then), and a save that created the file asks for the path list
   again. It reads the file again on `:conflict`. An `:eval`, `:load-file` or `:lookup`
-  reply fills in its results entry, whatever its status. An `:interrupt` reply shows its
+  reply fills in its results entry, whatever its status. A `:completions` reply answers
+  the editor's request with the candidates, or with `nil` when it is not `:ok`. An `:interrupt` reply shows its
   message, if any, as a toast. Any other reply that is not `:ok` shows its message as a
   toast."
   (fn [_r req _reply] (:op req)))
@@ -449,6 +454,10 @@
 (defmethod on-reply :eval      [r _req reply] (fill-entry r reply))
 (defmethod on-reply :load-file [r _req reply] (fill-entry r reply))
 (defmethod on-reply :lookup    [r _req reply] (fill-entry r reply))
+
+(defmethod on-reply :completions [r {:keys [token]} {:keys [status candidates]}]
+  ;; any status but :ok answers nil, so the editor offers the words of the file instead
+  (update r :fx conj [:completed token (when (= :ok status) candidates)]))
 
 (defmethod on-reply :interrupt [r _req {:keys [status message]}]
   (cond-> r message (toast (if (= :ok status) :info :error) message)))
@@ -495,6 +504,9 @@
     decides whether it is open.
   - `[:interrupt id]` interrupts the evaluation of the results entry `id`.
   - `[:unfold id]` shows the results entry `id` in full, or folds it again.
+  - `[:complete {:prefix :token}]` asks for the completions of `prefix`, which the editor
+    waits for as `token`. A Clojure file in the active tab asks the REPL, in the file's
+    namespace; any other file, or no connection, answers `nil` at once.
   - `[:jump-to id]` goes to the code of the results entry `id`: to its line, if it has one,
     when its file is open, or else it opens the file."
   (fn [_r event] (first event)))
@@ -502,8 +514,11 @@
 (defmethod step :connected [r _]
   (-> r (change assoc :conn :open) refresh))
 
-(defmethod step :disconnected [r _]
+(defmethod step :disconnected [{s :state :as r} _]
   (-> r
+      ;; the editor's completion requests still waiting are answered, with the file's words
+      (update :fx into (for [req (vals (:pending s)) :when (= :completions (:op req))]
+                         [:completed (:token req) nil]))
       ;; no reply comes any more, so no entry may stay running
       (change (fn [s] (-> s
                           (assoc :conn :closed :pending {})
@@ -642,3 +657,9 @@
       open-id     (cond-> (change r assoc :active open-id)
                     line (update :fx conj [:goto line]))
       :else       (step r [:open-file path]))))
+
+(defmethod step :complete [{s :state :as r} [_ {:keys [prefix token]}]]
+  (let [{:keys [path state]} (active-buffer s)]
+    (if (and state (model/clojure-file? path) (connected? s))
+      (send r :completions {:prefix prefix :ns (model/ns-of (editor/text state))} {:token token})
+      (update r :fx conj [:completed token nil]))))
