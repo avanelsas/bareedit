@@ -10,7 +10,7 @@
                                             syntaxTree]]
             ["@codemirror/search" :refer [openSearchPanel search searchKeymap]]
             ["@codemirror/state" :refer [EditorState]]
-            ["@codemirror/view" :refer [EditorView keymap]]
+            ["@codemirror/view" :refer [EditorView keymap lineNumbers]]
             ["@lezer/highlight" :refer [highlightTree tags]]
             [clojure.string :as str]
             [nextjournal.clojure-mode :as cm-clj]
@@ -36,6 +36,7 @@
                     "&.cm-focused"               {:outline "none"}
                     ".cm-gutters"                {:backgroundColor "var(--x-color-bg)"
                                                   :color "var(--x-color-text-muted)" :border "none"}
+                    ".cm-lineNumbers .cm-gutterElement" {:padding "0 12px 0 16px" :opacity "0.6"}
                     ".cm-activeLine"             {:backgroundColor "var(--x-color-surface-hover)"}
                     ".cm-selectionBackground, &.cm-focused .cm-selectionBackground"
                     {:backgroundColor "color-mix(in srgb, var(--x-color-primary) 25%, transparent)"}
@@ -214,15 +215,25 @@
 
 (def extensions
   "The extensions every editor state gets.
-  These are the undo history, [[text-layer]], clojure-mode's syntax, close brackets and
-  selection history, CodeMirror's own bracket matching, search, completion (see [[complete]]),
-  [[highlighting]] and [[theme]]. CodeMirror's bracket matching replaces clojure-mode's,
-  which crashes on current CodeMirror versions. Nothing reformats while typing; a
-  structural command tidies the lines it changed, see [[edit]]."
-  #js [(history) text-layer (cm-clj/syntax) comment-tokens (close-brackets/extension)
-       (sel-history/extension) (bracketMatching) (search)
+  These are line numbers, soft wrapping of long lines, the undo history, [[text-layer]],
+  clojure-mode's syntax, close brackets and selection history, CodeMirror's own bracket
+  matching, search, completion (see [[complete]]), [[highlighting]] and [[theme]].
+  CodeMirror's bracket matching replaces clojure-mode's, which crashes on current
+  CodeMirror versions. Nothing reformats while typing; a structural command tidies the
+  lines it changed, see [[edit]]."
+  #js [(lineNumbers)
+       (.-lineWrapping EditorView)
+       (history)
+       text-layer
+       (cm-clj/syntax)
+       comment-tokens
+       (close-brackets/extension)
+       (sel-history/extension)
+       (bracketMatching)
+       (search)
        (autocompletion #js {:override #js [complete] :defaultKeymap false})
-       highlighting theme])
+       highlighting
+       theme])
 
 (defn new-state
   "A new `EditorState` holding `text`, with an empty undo history."

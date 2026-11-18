@@ -197,6 +197,18 @@
        (cond (:deleted? b)       " (deleted)"
              (steps/unsaved? b)  " ●")))
 
+(defn tab-view
+  "The tab of the buffer `b`, with its [[tab-label]] and a button that closes it.
+  A click on the button calls `dispatch` with `[:close-tab id]` and goes no further, so
+  the tab is not selected first."
+  [{:keys [id path] :as b} dispatch]
+  [:x-tab {:value (str id) :variant "underline" :size "sm"}
+   [:span {:class "tab-name"} (tab-label b)]
+   [:span {:class "tab-close" :role "button" :title "Close tab"
+           :aria-label (str "Close " (model/file-name path))
+           :on-click (fn [^js e] (.stopPropagation e) (dispatch [:close-tab id]))}
+    "×"]])
+
 (def tree-json
   "Returns the `x-tree` items for the path list `paths`, as JSON.
   The items are derived from the paths, so they are not stored in the state. The last
@@ -240,16 +252,19 @@
       [:x-split-pane {:slot "end" :class (if results-open? "inner" "inner closed")
                       :position (if results-open? "62" "100") :disabled (not results-open?)}
       [:div {:slot "start" :class "main"}
-       (if (seq tabs)
-         [:x-tabs {:value (str active) :label "Open files"
-                   :on-value-change-request (fn [^js e]
-                                              (.preventDefault e)
-                                              (dispatch [:select-tab (js/parseInt (.. e -detail -value))]))}
-          (for [id tabs]
-            [:x-tab {:value (str id) :variant "underline" :size "sm"} (tab-label (get buffers id))])]
-         [:div {:class "empty"} (if (= conn :closed) "Disconnected. Restart bare-edit." "Open a file from the tree.")])
+       ;; the tab bar shows even with no tabs, so its line meets the results bar's
+       [:x-tabs {:value (str active) :label "Open files"
+                 :on-value-change-request (fn [^js e]
+                                            (.preventDefault e)
+                                            (dispatch [:select-tab (js/parseInt (.. e -detail -value))]))}
+        (for [id tabs]
+          (tab-view (get buffers id) dispatch))]
        ;; hidden while the active file loads, so nothing typed lands in the previous file's text
-       [:div {:id "editor" :data-keep true :style (str fonts (when-not (:state active-b) "display:none"))}]]
+       [:div {:id "editor" :data-keep true :style (str fonts (when-not (:state active-b) "display:none"))}]
+       ;; render matches children by position, so the message comes after the editor: one
+       ;; that came before would move the editor's place, and the editor would be rebuilt
+       (when (empty? tabs)
+         [:div {:class "empty"} (if (= conn :closed) "Disconnected. Restart bare-edit." "Open a file from the tree.")])]
       [:div {:slot "end" :class "results-pane" :style fonts} (when results-open? (results-view s dispatch))]]]
      ;; render matches children by position, so each overlay has a fixed slot and one
      ;; appearing never moves another; the toaster keeps its toasts (:data-keep)

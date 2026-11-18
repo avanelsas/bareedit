@@ -390,3 +390,10 @@
         (is (= [[:completed 4 nil]] (:fx (run s2 [:complete {:prefix "ma" :token 4}]))))))
     (testing "so does a page with no connection"
       (is (= [[:completed 5 nil]] (:fx (run (assoc s :conn :closed) [:complete {:prefix "ma" :token 5}])))))))
+
+(deftest closing-a-tab-from-its-button
+  (testing "a saved tab closes"
+    (is (empty? (:tabs (:state (run (opened "(ns a)") [:close-tab 1]))))))
+  (testing "a tab with unsaved changes asks first"
+    (is (= [{:kind :close :buffer 1}]
+           (:questions (:state (run (typed (opened "(ns a)") "(ns b)") [:close-tab 1])))))))

@@ -22,6 +22,12 @@
   [h]
   (some #(when (= "editor" (:id (second %))) (:style (second %))) (elements h :div)))
 
+(defn- tab-names
+  "The name shown on each tab in the hiccup `h`, without its close button."
+  [h]
+  (for [tab (elements h :x-tab)]
+    (text (filter #(= "tab-name" (:class (second %))) (elements tab :span)))))
+
 (defn- render
   "The page for the state `s`, with a `dispatch` that records events in `events`."
   [s events]
@@ -38,7 +44,14 @@
 (deftest tabs-and-tree
   (let [events (atom [])
         h      (render state events)]
-    (is (= ["a.clj ●" "b.clj"] (map text (elements h :x-tab))))
+    (is (= ["a.clj ●" "b.clj"] (tab-names h)))
+    (testing "a tab's close button closes it, and does not select it"
+      (let [stopped (atom false)]
+        ((:on-click (second (first (filter #(= "tab-close" (:class (second %))) (elements h :span)))))
+         #js {:stopPropagation #(reset! stopped true)})
+        (is @stopped)
+        (is (= [[:close-tab 1]] @events))
+        (reset! events [])))
     (testing "selecting a file in the tree opens it"
       ((:on-x-tree-select (second (first (elements h :x-tree)))) #js {:detail #js {:id "src/b.clj"}})
       (is (= [[:open-file "src/b.clj"]] @events)))

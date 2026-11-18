@@ -497,6 +497,7 @@
   - `[:message text]` handles a message from the server.
   - `[:open-file path]` opens a file from the tree, or switches to its tab.
   - `[:select-tab id]` makes a tab active.
+  - `[:close-tab id]` closes a tab, asking first when it has unsaved changes.
   - `[:expand ids]` stores the tree's expanded folders.
   - `[:command command]` runs a command, unless a dialog is open.
   - `[:editor-state old new]` stores an edit in the buffer it started from.
@@ -582,6 +583,9 @@
 
 (defmethod step :select-tab [r [_ id]]
   (change r assoc :active id))
+
+(defmethod step :close-tab [r [_ id]]
+  (close-tab r id))
 
 (defmethod step :expand [r [_ expanded]]
   (change r assoc :expanded expanded))
