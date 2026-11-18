@@ -347,45 +347,64 @@
 
 ;; ── Commands ───────────────────────────────────────────────────────────────
 
+(def command-groups
+  "The groups of the command palette, in the order it shows them, each with its header."
+  [{:id :file      :label "File"}
+   {:id :tabs      :label "Tabs"}
+   {:id :repl      :label "REPL"}
+   {:id :results   :label "Results"}
+   {:id :edit      :label "Edit"}
+   {:id :structure :label "Structure"}])
+
+(def group-labels
+  "The header of each group in [[command-groups]], by its id."
+  (into {} (map (juxt :id :label)) command-groups))
+
+(def group-order
+  "The place of each group in [[command-groups]], by its id, from 0."
+  (into {} (map-indexed (fn [i g] [(:id g) i])) command-groups))
+
 (def commands
   "The editor's commands, as plain data.
   Each has an `:id`, a `:label` and optional `:keys` in CodeMirror's key syntax, a string or
-  a vector of strings. A command with `:palette? false` is left out of the command palette.
+  a vector of strings. A command is in the command palette exactly when it has a
+  `:group`, one of [[command-groups]], under whose header it shows, in the order of this
+  list. The commands that open and close the palette have none.
   A command with `:scope :editor` works on the text, so its keys act only while the editor
   has the focus. The commands the editor itself runs are those of
   [[bare-edit.editor/command?]].
   [[bare-edit.keys/key-index]] reads this list, the command palette shows it, and
   [[run-command]] runs its entries."
-  [{:id :save              :label "Save"              :keys "Mod-s"}
-   {:id :save-all          :label "Save all"          :keys "Mod-Alt-s"}
-   {:id :close-tab         :label "Close tab"         :keys "Alt-w"}
-   {:id :next-tab          :label "Next tab"          :keys "Alt-]"}
-   {:id :prev-tab          :label "Previous tab"      :keys "Alt-["}
-   {:id :file-palette      :label "Go to file"        :keys "Mod-p"}
-   {:id :command-palette   :label "Show all commands" :keys ["Mod-Shift-p" "F1"] :palette? false}
-   {:id :close-palette     :label "Close the palette" :keys "Escape" :palette? false}
-   {:id :new-file          :label "New file"}
-   {:id :rename-file       :label "Rename file"       :keys "F2"}
-   {:id :refresh-file-tree :label "Refresh file tree"}
-   {:id :eval-form         :label "Evaluate form"      :keys "Mod-Enter"       :scope :editor}
-   {:id :eval-top-form     :label "Evaluate top-level form" :keys "Mod-Shift-Enter" :scope :editor}
-   {:id :eval-file         :label "Evaluate file"}
-   {:id :interrupt         :label "Interrupt evaluation" :keys "Mod-."}
-   {:id :show-docs         :label "Show docs"}
-   {:id :clear-results     :label "Clear results"}
-   {:id :toggle-results    :label "Toggle results column"}
-   {:id :find              :label "Find and replace"   :keys "Mod-f"         :scope :editor}
-   {:id :toggle-comment    :label "Toggle comment"     :keys "Mod-/"         :scope :editor}
-   {:id :show-completions  :label "Show completions"   :keys "Ctrl-Space"    :scope :editor}
-   {:id :slurp-forward     :label "Slurp forward"      :keys "Ctrl-Shift-0"  :scope :editor}
-   {:id :slurp-backward    :label "Slurp backward"     :keys "Ctrl-Shift-9"  :scope :editor}
-   {:id :barf-forward      :label "Barf forward"       :keys "Ctrl-Shift-]"  :scope :editor}
-   {:id :barf-backward     :label "Barf backward"      :keys "Ctrl-Shift-["  :scope :editor}
-   {:id :unwrap            :label "Unwrap"             :keys "Alt-s"         :scope :editor}
-   {:id :kill              :label "Kill to end of form" :keys "Ctrl-k"       :scope :editor}
-   {:id :expand-selection  :label "Expand selection"   :keys "Alt-ArrowUp"   :scope :editor}
-   {:id :shrink-selection  :label "Shrink selection"   :keys "Alt-ArrowDown" :scope :editor}
-   {:id :reindent          :label "Reindent the current form"               :scope :editor}])
+  [{:id :file-palette      :group :file      :label "Go to file"              :keys "Mod-p"}
+   {:id :new-file          :group :file      :label "New file"}
+   {:id :rename-file       :group :file      :label "Rename file"             :keys "F2"}
+   {:id :save              :group :file      :label "Save"                    :keys "Mod-s"}
+   {:id :save-all          :group :file      :label "Save all"                :keys "Mod-Alt-s"}
+   {:id :refresh-file-tree :group :file      :label "Refresh file tree"}
+   {:id :close-tab         :group :tabs      :label "Close tab"               :keys "Alt-w"}
+   {:id :next-tab          :group :tabs      :label "Next tab"                :keys "Alt-]"}
+   {:id :prev-tab          :group :tabs      :label "Previous tab"            :keys "Alt-["}
+   {:id :eval-form         :group :repl      :label "Evaluate form"           :keys "Mod-Enter"       :scope :editor}
+   {:id :eval-top-form     :group :repl      :label "Evaluate top-level form" :keys "Mod-Shift-Enter" :scope :editor}
+   {:id :eval-file         :group :repl      :label "Evaluate file"}
+   {:id :interrupt         :group :repl      :label "Interrupt evaluation"    :keys "Mod-."}
+   {:id :show-docs         :group :repl      :label "Show docs"}
+   {:id :clear-results     :group :results   :label "Clear results"}
+   {:id :toggle-results    :group :results   :label "Toggle results column"}
+   {:id :find              :group :edit      :label "Find and replace"        :keys "Mod-f"           :scope :editor}
+   {:id :toggle-comment    :group :edit      :label "Toggle comment"          :keys "Mod-/"           :scope :editor}
+   {:id :show-completions  :group :edit      :label "Show completions"        :keys "Ctrl-Space"      :scope :editor}
+   {:id :reindent          :group :edit      :label "Reindent the current form"                       :scope :editor}
+   {:id :slurp-forward     :group :structure :label "Slurp forward"           :keys "Ctrl-Shift-0"    :scope :editor}
+   {:id :slurp-backward    :group :structure :label "Slurp backward"          :keys "Ctrl-Shift-9"    :scope :editor}
+   {:id :barf-forward      :group :structure :label "Barf forward"            :keys "Ctrl-Shift-]"    :scope :editor}
+   {:id :barf-backward     :group :structure :label "Barf backward"           :keys "Ctrl-Shift-["    :scope :editor}
+   {:id :unwrap            :group :structure :label "Unwrap"                  :keys "Alt-s"           :scope :editor}
+   {:id :kill              :group :structure :label "Kill to end of form"     :keys "Ctrl-k"          :scope :editor}
+   {:id :expand-selection  :group :structure :label "Expand selection"        :keys "Alt-ArrowUp"     :scope :editor}
+   {:id :shrink-selection  :group :structure :label "Shrink selection"        :keys "Alt-ArrowDown"   :scope :editor}
+   {:id :command-palette   :label "Show all commands" :keys ["Mod-Shift-p" "F1"]}
+   {:id :close-palette     :label "Close the palette" :keys "Escape"}])
 
 (defn command-dispatch
   "The value [[run-command]] dispatches `command` on.

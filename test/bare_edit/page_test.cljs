@@ -198,3 +198,14 @@
     (testing "typing goes to the question"
       ((:on-x-form-field-input (second (first (elements modal :x-form-field)))) #js {:detail #js {:value "src/c.clj"}})
       (is (= [[:question-path "src/c.clj"]] @events)))))
+
+(deftest the-command-palette-is-grouped
+  (let [items (page/palette-items (assoc state :palette {:kind :commands :query ""}))
+        runs  (map first (partition-by identity (map :group items)))]
+    (testing "the groups come in their order, each once"
+      (is (= (map :label steps/command-groups) runs)))
+    (testing "a group keeps the order of the command list"
+      (is (= ["Go to file" "New file" "Rename file" "Save" "Save all" "Refresh file tree"]
+             (map :label (filter #(= "File" (:group %)) items)))))
+    (testing "commands outside the palette are left out"
+      (is (not-any? #(= "command-palette" (:id %)) items)))))

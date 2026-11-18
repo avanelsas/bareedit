@@ -75,14 +75,18 @@
 (defn palette-items
   "The items of the open palette in the state `s`, as data for `x-command-palette`.
   The file palette holds the best paths for the query, in rank order, which the palette
-  shows as given. The command palette holds every command it shows, and filters them itself."
+  shows as given. The command palette holds every command it shows, and filters them itself.
+  Its commands are those with a group, group by group in the order of
+  [[bare-edit.steps/command-groups]], so the palette shows each group's header once; within
+  a group they keep the order of [[bare-edit.steps/commands]]."
   [{:keys [palette paths]}]
   (case (:kind palette)
     :files    (for [p (model/rank-paths paths (:query palette) palette-size)]
                 {:id p :label p})
-    :commands (for [{:keys [id label palette?]} steps/commands
-                    :when (not (false? palette?))]
-                {:id (name id) :label label})
+    :commands (for [{:keys [id label group]} (->> steps/commands
+                                                  (filter :group)
+                                                  (sort-by (comp steps/group-order :group)))]
+                {:id (name id) :label label :group (steps/group-labels group)})
     nil))
 
 (def palette-texts
