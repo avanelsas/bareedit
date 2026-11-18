@@ -33,10 +33,26 @@ On Java 20 and later, nREPL can stop running code only when the JVM has `-Djdk.a
 
 `Mod` is Cmd on macOS and Ctrl elsewhere. The command palette opens with `Mod-Shift-p` or `F1`.
 
-- **Namespaces.** A form is evaluated in the namespace of its file's `ns` form, or in `user` when there is none. If that namespace is not loaded yet, the result says so: evaluate the file first.
+- **Namespaces.** A form is evaluated in the namespace of its file's `ns` form, or in `user` when there is none (`cljs.user` in a `.cljs` file). If that namespace is not loaded yet, the result says so: evaluate the file first.
 - **Results.** Each evaluation gets an entry in the results column, newest first, with its output, its value and any error. Values are pretty-printed. A long value is folded, with a button that shows all of it. A click on an entry's header goes to its code.
 - **Completion.** In `.clj` and `.cljc` files, completions come from the REPL, with the kind and the namespace of each. With no REPL, and in every other file, the words of the open file are offered. `Ctrl-Space` shows them on demand.
-- **ClojureScript.** `.cljc` files go to the Clojure session. Evaluating `.cljs` files is not available yet.
+- **ClojureScript.** `.cljc` files go to the Clojure session, and `.cljs` files go to shadow-cljs, see below.
+
+## ClojureScript
+
+BareEditClj evaluates ClojureScript through the project's shadow-cljs. Start shadow-cljs in the project folder with a watch, and run the app so that a JS runtime connects:
+
+```sh
+npx shadow-cljs watch app
+```
+
+- **The build.** The editor uses the build whose watch runs. When several run, start the editor with `--build` and the name of one, such as `bare-edit --build app`. Each browser tab keeps the build it started with.
+- **Messages.** When no watch runs, when no JS runtime is connected, or when the watch stops, the result says so. Start it again, and the next evaluation reconnects.
+- **Namespaces.** A namespace that is not loaded is created empty, with no message, so evaluate the file first.
+- **Evaluate file** sends the text of the file, saved or not.
+- **Interrupt.** A ClojureScript evaluation cannot be interrupted, because shadow-cljs cannot stop running JavaScript. The editor says so.
+- **Completion and docs.** In `.cljs` files, completion offers the words of the open file, and docs are not available.
+- **Clojure.** Without a `.nrepl-port`, Clojure evaluations use shadow-cljs's own JVM.
 
 ## Development
 
