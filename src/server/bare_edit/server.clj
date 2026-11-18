@@ -3,7 +3,8 @@
   It serves the editor page and answers requests over one WebSocket, on `127.0.0.1` only.
   A WebSocket is accepted only from the editor's own page and with the startup token, and
   no path in a request may lead outside the project."
-  (:require [bare-edit.files :as files]
+  (:require [bare-edit.config :as config]
+            [bare-edit.files :as files]
             [bare-edit.nrepl :as nrepl]
             [bare-edit.paths :as paths]
             [bare-edit.protocol :as p]
@@ -18,8 +19,8 @@
 
 (defmulti handle
   "The reply to `req`, a well-formed request, dispatched on its `:op`.
-  `ctx` holds the canonical project `:root` and the startup options. An operation without
-  a method is answered `:unavailable`."
+  `ctx` holds the canonical project `:root` and the startup options, with the look and
+  feel file at `:config-file`. An operation without a method is answered `:unavailable`."
   (fn [_ctx req] (:op req)))
 
 (defmethod handle :default [_ctx {:keys [id op]}]
@@ -29,6 +30,10 @@
   "The first of `rels` that is not a file path inside the project at `root`, or `nil`."
   [root rels]
   (first (remove #(paths/resolve-in root %) rels)))
+
+(defmethod handle :config [{:keys [config-file]} {:keys [id]}]
+  (let [{:keys [config problems]} (config/check (config/read-file config-file))]
+    (p/reply id :ok {:config config :problems (mapv config/problem-text problems)})))
 
 (defmethod handle :paths [{:keys [root]} {:keys [id]}]
   (p/reply id :ok {:paths (files/path-list root)}))
@@ -190,7 +195,8 @@
 
 (defn start!
   "Starts the server for the project at `:root` in `opts`, on `127.0.0.1` and a free port.
-  `:build` in `opts` is the shadow-cljs build named with `--build`, if any. Returns the
+  `:build` in `opts` is the shadow-cljs build named with `--build`, if any, and
+  `:config-file` the look and feel file, [[config/default-file]] unless given. Returns the
   context as a value: `opts` with the canonical `:root`, and `:port`, `:token`, `:repl`,
   the client for the project's nREPLs, `:url`, and `:stop`, a function that stops the
   server and closes the REPL connections."
@@ -201,7 +207,8 @@
         token  (new-token)
         root   (str (fs/canonicalize root))
         client (nrepl/client root (:build opts))]
-    (deliver ctx (assoc opts :root root :port port :token token :repl client))
+    (deliver ctx (assoc opts :root root :port port :token token :repl client
+                            :config-file (or (:config-file opts) config/default-file)))
     (assoc @ctx
            :url (str "http://127.0.0.1:" port "/?token=" token)
            :stop #(do (hk/server-stop! server) (nrepl/close! client)))))
