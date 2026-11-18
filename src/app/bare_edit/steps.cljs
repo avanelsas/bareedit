@@ -115,10 +115,40 @@
   [s path]
   (keep (fn [[id b]] (when (= path (:path b)) id)) (:buffers s)))
 
-(defn saving?
-  "Whether, in the state `s`, a save of `path` is waiting for its reply."
+(defn question-problem
+  "Why the path typed in `question`, the first in the state `s`, cannot be used, or `nil`.
+  The answer is a sentence. A new file's path must pass [[bare-edit.model/path-problem]].
+  A rename's must too, and it must not name another file in the project or a file open in
+  a tab. Its own path is fine, and renames nothing."
+  [s {:keys [kind buffer path]}]
+  (or (model/path-problem path)
+      (when (= :rename kind)
+        (let [to (model/normalize-path path)]
+          (when (not= to (get-in s [:buffers buffer :path]))
+            (cond (some #{to} (:paths s))       "A file with that path exists."
+                  (seq (buffer-ids-for s to))   "That file is open in a tab."))))))
+
+(defn- rename-buffers
+  "Returns the state `s` with every buffer of the file `from` holding the file `to`.
+  The buffers keep their text, their unsaved changes and their undo history."
+  [s from to]
+  (reduce #(assoc-in %1 [:buffers %2 :path] to) s (buffer-ids-for s from)))
+
+(defn busy?
+  "Whether, in the state `s`, a save or a rename of the file `path` waits for its reply.
+  A busy file is not saved or renamed again until then: the second request would carry
+  the version from before the first, or the path the first moves away from."
   [s path]
-  (some #(and (= :save (:op %)) (= path (:path %))) (vals (:pending s))))
+  (some #(case (:op %)
+           :save   (= path (:path %))
+           :rename (= path (:from %))
+           false)
+        (vals (:pending s))))
+
+(defn- busy-toast
+  "Returns the result `r` with a toast saying the file `path` is still being saved or renamed."
+  [r path]
+  (toast r :info (str "Still saving or renaming " (model/file-name path) ".")))
 
 (defn blocked?
   "Whether the state `s` has a question open, so commands wait until it is answered."
@@ -134,6 +164,8 @@
     take `disk`, the file's `:text` and `:version`, which changed while it had unsaved
     changes.
   - `{:kind :new-file :path path}` asks for the path of a new file, about no buffer.
+  - `{:kind :rename :buffer id :path path}` asks for the new path of the buffer's file,
+    starting from its own.
 
   A question of the same kind about the same buffer is replaced where it stands, so a file
   that changes twice is asked about once, with its latest text. Asking closes an open
@@ -282,16 +314,15 @@
 (defn save-buffer
   "Returns the result `r` with a save of the buffer `id` to send.
   `then` is what to do once the save succeeds, such as `[:close-tab id]`, kept with the
-  pending request as `:then`, see [[send]]. A second save of the same
-  file is refused with a toast while the first waits for its reply, since it would be sent
-  with the old version and conflict; its `then` is dropped with it. A missing or loading
-  buffer leaves `r` unchanged."
+  pending request as `:then`, see [[send]]. A save of a [[busy?]] file is refused with a
+  toast, and its `then` is dropped with it. A missing or loading buffer leaves `r`
+  unchanged."
   ([r id] (save-buffer r id nil))
   ([{s :state :as r} id then]
    (let [b (get-in s [:buffers id])]
      (cond
        (or (nil? b) (:loading? b)) r
-       (saving? s (:path b))       (toast r :info (str "Still saving " (model/file-name (:path b)) "."))
+       (busy? s (:path b))         (busy-toast r (:path b))
        :else (send r :save {:path (:path b) :text (buffer-text b) :version (:disk-version b)}
                    (when then {:then then}))))))
 
@@ -334,6 +365,7 @@
    {:id :command-palette   :label "Show all commands" :keys ["Mod-Shift-p" "F1"] :palette? false}
    {:id :close-palette     :label "Close the palette" :keys "Escape" :palette? false}
    {:id :new-file          :label "New file"}
+   {:id :rename-file       :label "Rename file"       :keys "F2"}
    {:id :refresh-file-tree :label "Refresh file tree"}
    {:id :eval-form         :label "Evaluate form"      :keys "Mod-Enter"       :scope :editor}
    {:id :eval-top-form     :label "Evaluate top-level form" :keys "Mod-Shift-Enter" :scope :editor}
@@ -407,6 +439,11 @@
 (defmethod run-command :new-file [{s :state :as r} _]
   (change r ask {:kind :new-file
                  :path (model/folder-of (get-in s [:buffers (:active s) :path]))}))
+
+(defmethod run-command :rename-file [{s :state :as r} _]
+  (if-let [{:keys [id path]} (active-buffer s)]
+    (change r ask {:kind :rename :buffer id :path path})
+    r))
 
 (defmethod run-command :refresh-file-tree [r _] (send r :paths {}))
 
@@ -496,6 +533,16 @@
 (defmethod on-reply :interrupt [r _req {:keys [status message]}]
   (cond-> r message (toast (if (= :ok status) :info :error) message)))
 
+(defmethod on-reply :rename [r {:keys [from to]} {:keys [status message]}]
+  (case status
+    :ok       (-> r
+                  (change rename-buffers from to)
+                  (send :paths {})
+                  (toast :info (str "Renamed " (model/file-name from) " to " (model/file-name to) ".")))
+    ;; the read then says what is on disk: changed, or gone
+    :conflict (-> r (toast :error message) (send :read {:paths [from]}))
+    (toast r :error message)))
+
 (defmethod on-reply :save [r {:keys [path text then] sent-version :version}
                            {:keys [status version message]}]
   (case status
@@ -527,9 +574,9 @@
   - `[:command command]` runs a command, unless a dialog is open.
   - `[:editor-state old new]` stores an edit in the buffer it started from.
   - `[:answer choice]` answers the first open question, see [[ask]]. A close question takes
-    `:save`, `:discard` or `:cancel`, a changed-on-disk question `:keep` or `:take`, and a
-    new-file question `:create` or `:cancel`.
-  - `[:new-file-path text]` stores the path typed in the new-file question.
+    `:save`, `:discard` or `:cancel`, a changed-on-disk question `:keep` or `:take`, a
+    new-file question `:create` or `:cancel`, and a rename question `:rename` or `:cancel`.
+  - `[:question-path text]` stores the path typed in a new-file or rename question.
   - `[:palette-query text]` stores the query typed in the open palette.
   - `[:palette-pick id]` runs what was picked: a file opens, a command runs. Either way the
     palette closes and the editor gets the focus first, unless the pick opened a palette.
@@ -629,6 +676,19 @@
                 (assoc-in s [:buffers id :state] new)
                 s))))
 
+(defn- rename-file
+  "Returns the result `r` with the file of the buffer `id` renamed to `to`.
+  Its own path renames nothing, and a [[busy?]] file is refused with a toast. A file that
+  was never saved is not on disk, so its buffers take the new path at once; any other file
+  is renamed on disk first, see the `:rename` reply."
+  [{s :state :as r} id to]
+  (let [{:keys [path disk-version]} (get-in s [:buffers id])]
+    (cond
+      (= to path)                r
+      (busy? s path)             (busy-toast r path)
+      (= :absent disk-version)   (change r rename-buffers path to)
+      :else                      (send r :rename {:from path :to to :version disk-version}))))
+
 (defn- new-file
   "Returns the result `r` with a tab for `path`, a file that need not exist yet.
   An open file switches to its tab, and a file in the path list opens. Any other path opens
@@ -643,13 +703,16 @@
   (let [{:keys [kind buffer disk path] :as question} (first (:questions s))]
     (cond
       (nil? question) r
-      ;; a new file with a path problem keeps its question open
-      (and (= [:new-file :create] [kind choice]) (model/path-problem path)) r
+      ;; a path with a problem keeps its question open
+      (and (#{:create :rename} choice) (question-problem s question)) r
       :else
       (let [r (change r update :questions #(vec (rest %)))]
         (case kind
           :new-file    (case choice
                          :create (new-file r (model/normalize-path path))
+                         :cancel r)
+          :rename      (case choice
+                         :rename (rename-file r buffer (model/normalize-path path))
                          :cancel r)
           :close       (case choice
                          :save    (save-buffer r buffer [:close-tab buffer])
@@ -660,8 +723,8 @@
                                          :keep (assoc b :disk-text (:text disk) :disk-version (:version disk))
                                          :take (with-disk b disk)))))))))
 
-(defmethod step :new-file-path [{s :state :as r} [_ text]]
-  (if (= :new-file (:kind (first (:questions s))))
+(defmethod step :question-path [{s :state :as r} [_ text]]
+  (if (#{:new-file :rename} (:kind (first (:questions s))))
     (change r assoc-in [:questions 0 :path] text)
     r))
 

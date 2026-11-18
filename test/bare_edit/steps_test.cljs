@@ -83,7 +83,7 @@
   (let [s (typed (opened "(ns a)") "(ns a) 1")]
     (testing "a second save while the first waits is refused with a toast"
       (let [{fx :fx} (run s [:command {:id :save}] [:command {:id :save}])]
-        (is (= [[:toast :info "Still saving a.clj."]] fx))))
+        (is (= [[:toast :info "Still saving or renaming a.clj."]] fx))))
     (testing "the reply records the text that was sent as the disk text"
       (let [r (run s [:command {:id :save}])
             s (:state (run (:state (update r :state typed "(ns a) 12")) (reply-to r :ok {:version "v2"})))]
@@ -221,9 +221,9 @@
   (let [s (:state (run (opened "(ns a)") [:command (command :new-file)]))]
     (is (= [{:kind :new-file :path "src/"}] (:questions s)) "the path starts in the active file's folder")
     (testing "a path with a problem keeps the question open"
-      (is (= s (:state (run s [:new-file-path "../x.clj"] [:answer :create] [:new-file-path "src/"])))))
+      (is (= s (:state (run s [:question-path "../x.clj"] [:answer :create] [:question-path "src/"])))))
     (testing "a new path opens an empty buffer that is not on disk"
-      (let [s2 (:state (run s [:new-file-path "src/new/c.clj"] [:answer :create]))
+      (let [s2 (:state (run s [:question-path "src/new/c.clj"] [:answer :create]))
             b  (get-in s2 [:buffers 2])]
         (is (= [] (:questions s2)))
         (is (= ["src/new/c.clj" "" :absent false] [(:path b) (:disk-text b) (:disk-version b) (steps/unsaved? b)]))
@@ -234,11 +234,11 @@
             (is (= :absent (:version sent)))
             (is (= #{:paths} (set (map (comp :op second) (:fx (run (:state r) (reply-to r :ok {:version "v1"})))))))))))
     (testing "a path in the path list opens that file"
-      (is (= "src/b.clj" (get-in (run s [:new-file-path "src/b.clj"] [:answer :create]) [:state :buffers 2 :path]))))
+      (is (= "src/b.clj" (get-in (run s [:question-path "src/b.clj"] [:answer :create]) [:state :buffers 2 :path]))))
     (testing "a path is normalized first, so ./src/b.clj opens src/b.clj"
-      (is (= "src/b.clj" (get-in (run s [:new-file-path "./src//b.clj"] [:answer :create]) [:state :buffers 2 :path]))))
+      (is (= "src/b.clj" (get-in (run s [:question-path "./src//b.clj"] [:answer :create]) [:state :buffers 2 :path]))))
     (testing "the path of an open file switches to its tab"
-      (is (= 1 (:active (:state (run s [:new-file-path "src/a.clj"] [:answer :create]))))))))
+      (is (= 1 (:active (:state (run s [:question-path "src/a.clj"] [:answer :create]))))))))
 
 (deftest save-all
   (let [s (-> (opened "(ns a)") (typed "(ns a) 1")
@@ -419,3 +419,54 @@
                                       [:state :repl :clj :status]))))
         (testing "and a disconnect forgets it"
           (is (= {} (get-in (run (:state r2) [:disconnected]) [:state :repl]))))))))
+
+(defn- renaming
+  "The result of asking to rename the file of `s`'s active tab to `path`."
+  [s path]
+  (run s [:command (steps/command-by-name "rename-file")] [:question-path path] [:answer :rename]))
+
+(deftest renaming-a-file
+  (let [s (typed (opened "(ns a)") "(ns a) 1")]
+    (testing "the question starts from the file's own path"
+      (is (= [{:kind :rename :buffer 1 :path "src/a.clj"}]
+             (:questions (:state (run s [:command (steps/command-by-name "rename-file")]))))))
+    (testing "its own path renames nothing"
+      (let [r (renaming s "src/a.clj")]
+        (is (empty? (:questions (:state r))))
+        (is (empty? (:fx r)))))
+    (testing "a path that names another file keeps the question open"
+      (let [s2 (:state (renaming s "src/b.clj"))]
+        (is (= "A file with that path exists." (steps/question-problem s2 (first (:questions s2)))))))
+    (let [r (renaming s "src/util/c.clj")]
+      (testing "a saved file is renamed on disk, with the version it was loaded at"
+        (is (= [:send {:op :rename :id 5 :from "src/a.clj" :to "src/util/c.clj" :version "v1"}]
+               (first (:fx r)))))
+      (testing "once renamed, its tab holds the new path and keeps its unsaved text"
+        (let [r2 (run (:state r) (reply-to r :ok {:version "v1"}))]
+          (is (= "src/util/c.clj" (get-in r2 [:state :buffers 1 :path])))
+          (is (steps/unsaved? (get-in r2 [:state :buffers 1])))
+          (is (some #{[:toast :info "Renamed a.clj to c.clj."]} (:fx r2)))
+          (is (some #(= :paths (:op (second %))) (:fx r2)))))
+      (testing "a file changed on disk keeps its path, and is read again"
+        (let [r2 (run (:state r) (reply-to r :conflict {:message "src/a.clj changed on disk."}))]
+          (is (= "src/a.clj" (get-in r2 [:state :buffers 1 :path])))
+          (is (some #(= [:read ["src/a.clj"]] [(:op (second %)) (:paths (second %))]) (:fx r2))))))
+    (testing "a new file never saved takes the new path at once"
+      (let [s2 (:state (run s [:command (steps/command-by-name "new-file")] [:question-path "src/n.clj"] [:answer :create]))
+            r  (renaming s2 "src/m.clj")]
+        (is (= "src/m.clj" (get-in r [:state :buffers 2 :path])))
+        (is (not-any? #(= :send (first %)) (:fx r)))
+        (testing "and a file open in a tab cannot be renamed onto"
+          (is (= "That file is open in a tab."
+                 (steps/question-problem (:state r) {:kind :rename :buffer 1 :path "src/m.clj"}))))))))
+
+(deftest a-file-being-saved-or-renamed-waits
+  (let [s (typed (opened "(ns a)") "(ns a) 1")]
+    (testing "a save during a rename is refused"
+      (let [r (renaming s "src/c.clj")]
+        (is (= [[:toast :info "Still saving or renaming a.clj."]]
+               (:fx (run (:state r) [:command (steps/command-by-name "save")]))))))
+    (testing "a rename during a save is refused"
+      (let [r (run s [:command (steps/command-by-name "save")])]
+        (is (= [[:toast :info "Still saving or renaming a.clj."]]
+               (:fx (renaming (:state r) "src/c.clj"))))))))

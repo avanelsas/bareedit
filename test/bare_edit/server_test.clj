@@ -69,6 +69,15 @@
         (is (= {"src/a.clj" {:text "(ns a)" :version v}}
                (:files (ask c (p/request :read 6 {:paths ["src/a.clj"]})))))
         (is (= :conflict (:status (ask c (p/request :save 7 {:path "src/a.clj" :text "x" :version :absent})))))))
+    (testing "rename: a file moves, and never over another or out of the project"
+      (let [v (get-in (ask c (p/request :read 12 {:paths ["src/a.clj"]})) [:files "src/a.clj" :version])]
+        (ask c (p/request :save 13 {:path "src/b.clj" :text "(ns b)" :version :absent}))
+        (is (= :error (:status (ask c (p/request :rename 14 {:from "src/a.clj" :to "src/b.clj" :version v})))))
+        (is (= :error (:status (ask c (p/request :rename 15 {:from "src/a.clj" :to "../x.clj" :version v})))))
+        (is (= :conflict (:status (ask c (p/request :rename 16 {:from "src/a.clj" :to "src/c.clj" :version :absent})))))
+        (is (= {:id 17 :status :ok :version v}
+               (ask c (p/request :rename 17 {:from "src/a.clj" :to "src/c.clj" :version v}))))
+        (is (= ["src/b.clj" "src/c.clj"] (:paths (ask c (p/request :paths 18 {})))))))
     (testing "paths that leave the project are refused"
       (is (= :error (:status (ask c (p/request :read 8 {:paths ["../etc/passwd"]})))))
       (is (= :error (:status (ask c (p/request :save 9 {:path "/tmp/x" :text "" :version :absent}))))))

@@ -1,5 +1,5 @@
 (ns bare-edit.files-test
-  "Tests the path list, versions, reading and compare-and-set saving on real folders."
+  "Tests the path list, versions, reading, and compare-and-set saving and renaming on real folders."
   (:require [bare-edit.files :as files]
             [babashka.fs :as fs]
             [babashka.process :as process]
@@ -86,3 +86,25 @@
       (fs/create-file (fs/path root "plain.txt"))
       (files/save! root "new.clj" "(ns new)" :absent)
       (is (= (perms "plain.txt") (perms "new.clj"))))))
+
+(deftest renaming
+  (let [root (project {"src/a.clj" "(ns a)" "src/b.clj" "(ns b)"})
+        v    (files/version (fs/path root "src/a.clj"))]
+    (testing "a file moves, into new folders too, and keeps its version"
+      (is (= {:version v} (files/rename! root "src/a.clj" "src/util/c.clj" v)))
+      (is (not (fs/exists? (fs/path root "src/a.clj"))))
+      (is (= "(ns a)" (slurp (str (fs/path root "src/util/c.clj"))))))
+    (testing "it never overwrites"
+      (is (= {:exists true} (files/rename! root "src/util/c.clj" "src/b.clj" v)))
+      (is (= "(ns b)" (slurp (str (fs/path root "src/b.clj"))))))
+    (testing "a file changed on disk, or gone, conflicts"
+      (is (= {:conflict (files/version (fs/path root "src/b.clj"))}
+             (files/rename! root "src/b.clj" "src/d.clj" v)))
+      (is (= {:conflict :absent} (files/rename! root "src/gone.clj" "src/d.clj" v))))))
+
+(deftest renaming-to-another-case
+  (let [root (project {"src/a.clj" "(ns a)"})
+        v    (files/version (fs/path root "src/a.clj"))]
+    (testing "a name that differs only in case is renamed, also where case is ignored"
+      (is (= {:version v} (files/rename! root "src/a.clj" "src/A.clj" v)))
+      (is (= ["A.clj"] (map (comp str fs/file-name) (fs/list-dir (fs/path root "src"))))))))
