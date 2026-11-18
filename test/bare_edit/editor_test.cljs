@@ -106,3 +106,14 @@
                                               {:candidate "my-var" :type "var"}
                                               {:candidate "odd" :type "unknown"}])
                   :keywordize-keys true))))
+
+(deftest syntax-colours-come-from-the-theme
+  (let [tokens #{"comment" "keyword" "string" "constant" "function" "type" "tag"}]
+    (doseq [[_ token] editor/syntax-colours]
+      (is (contains? tokens token) (str token " is one of the theme's syntax tokens")))))
+
+(deftest a-defined-name-has-its-own-colour
+  (let [classes (into {} (editor/highlighted "(defn foo [x] (inc x))"))]
+    (is (some? (classes "foo")))
+    (is (not= (classes "defn") (classes "foo")))
+    (is (= (classes "defn") (classes "inc")) "a call is coloured like defn")))

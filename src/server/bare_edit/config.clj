@@ -10,7 +10,7 @@
 
 (def presets
   "The names of BareDOM's built-in `x-theme` presets.
-  This is a copy of BareDOM 4.20's list, because the server runs in Babashka and cannot read
+  This is a copy of BareDOM's own list, because the server runs in Babashka and cannot read
   BareDOM's ClojureScript."
   #{"default" "ocean" "forest" "sunset" "neo-brutalist" "aurora" "mono-ai" "warm-mineral"})
 
