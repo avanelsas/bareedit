@@ -1,0 +1,2 @@
+{:deps true
+ :builds {:app {:target :node-script :output-to "out/app.js" :main demo.core/main}}}
