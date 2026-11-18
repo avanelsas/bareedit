@@ -35,6 +35,9 @@
   (let [{:keys [config problems]} (config/check (config/read-file config-file))]
     (p/reply id :ok {:config config :problems (mapv config/problem-text problems)})))
 
+(defmethod handle :project [{:keys [root]} {:keys [id]}]
+  (p/reply id :ok {:name (str (fs/file-name root))}))
+
 (defmethod handle :paths [{:keys [root]} {:keys [id]}]
   (p/reply id :ok {:paths (files/path-list root)}))
 
@@ -75,7 +78,7 @@
   `->msg` builds the nREPL message from the request and the session kind. A path outside
   the project, or a file that is not Clojure or ClojureScript code, is refused."
   [ctx {:keys [id path] :as req} ->msg]
-  (let [kind (repl/kind-for path)]
+  (let [kind (p/kind-for path)]
     (cond
       (outside (:root ctx) [path]) (p/failure id :error (str "Not a file in this project: " path))
       (nil? kind)                  (p/failure id :error (str path " is not a Clojure or ClojureScript file."))
@@ -89,7 +92,7 @@
   (repl-request! ctx :clj id {"op" "completions" "prefix" prefix "ns" (or ns "user")} repl/fold-completions))
 
 (defmethod handle :lookup [ctx {:keys [id path sym ns]}]
-  (or (when (= :cljs (repl/kind-for path))
+  (or (when (= :cljs (p/kind-for path))
         (p/failure id :unavailable "Docs are available for Clojure only."))
       (repl-request! ctx :clj id {"op" "lookup" "sym" sym "ns" (or ns "user")} repl/fold-lookup)))
 

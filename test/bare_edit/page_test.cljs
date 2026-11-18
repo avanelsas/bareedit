@@ -22,6 +22,12 @@
   [h]
   (some #(when (= "editor" (:id (second %))) (:style (second %))) (elements h :div)))
 
+(defn- tab-names
+  "The name shown on each tab in the hiccup `h`, without its close button."
+  [h]
+  (for [tab (elements h :x-tab)]
+    (text (filter #(= "tab-name" (:class (second %))) (elements tab :span)))))
+
 (defn- render
   "The page for the state `s`, with a `dispatch` that records events in `events`."
   [s events]
@@ -38,7 +44,16 @@
 (deftest tabs-and-tree
   (let [events (atom [])
         h      (render state events)]
-    (is (= ["a.clj ●" "b.clj"] (map text (elements h :x-tab))))
+    (is (= ["a.clj ●" "b.clj"] (tab-names h)))
+    (testing "a tab's close button closes it, and does not select it"
+      (let [stopped (atom false)]
+        ((:on-click (second (first (filter #(= "tab-close" (:class (second %))) (elements h :span)))))
+         #js {:stopPropagation #(reset! stopped true)})
+        (is @stopped)
+        (is (= [[:close-tab 1]] @events))
+        (reset! events [])))
+    (testing "the tree has a header with the editor's name"
+      (is (= "<BareEdit>" (text (filter #(= "bar files-bar" (:class (second %))) (elements h :div))))))
     (testing "selecting a file in the tree opens it"
       ((:on-x-tree-select (second (first (elements h :x-tree)))) #js {:detail #js {:id "src/b.clj"}})
       (is (= [[:open-file "src/b.clj"]] @events)))
@@ -158,3 +173,15 @@
       (is (nil? (:style (second h)))))
     (testing "a font the file does not name is not set"
       (is (= "--x-font-size-base:12px;" (page/font-style {:font-size 12}))))))
+
+(deftest the-status-bar
+  (let [events (atom [])
+        s      (assoc state :project "demo" :repl {:clj {:status :no-runtime :message "No runtime."}})
+        bar    (page/status-bar s #(swap! events conj %))]
+    (is (= "democonnectedClojure: no JS runtimeClojureScript: not used yetClojureLn 1, Col 1Commands" (text bar)))
+    (testing "a REPL's message is its tooltip"
+      (is (= "No runtime." (some #(when (= "dot bad" (:class (second %))) (:title (second %)))
+                                 (elements bar :span)))))
+    (testing "the button opens the command palette"
+      (click (first (elements bar :x-button)))
+      (is (= [[:command (steps/command-by-name "command-palette")]] @events)))))

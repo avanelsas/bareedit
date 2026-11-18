@@ -37,9 +37,9 @@
   (let [r (run (assoc steps/initial-state :buffers {1 {:id 1 :path "src/a.clj" :disk-text ""}})
                [:connected])]
     (is (= [[:send {:op :paths :id 1}] [:send {:op :read :id 2 :paths ["src/a.clj"]}]
-            [:send {:op :config :id 3}]]
+            [:send {:op :config :id 3}] [:send {:op :project :id 4}]]
            (:fx r)))
-    (is (= #{1 2 3} (set (keys (get-in r [:state :pending])))))))
+    (is (= #{1 2 3 4} (set (keys (get-in r [:state :pending])))))))
 
 (deftest the-look-and-feel
   (let [r (run steps/initial-state [:connected])
@@ -390,3 +390,32 @@
         (is (= [[:completed 4 nil]] (:fx (run s2 [:complete {:prefix "ma" :token 4}]))))))
     (testing "so does a page with no connection"
       (is (= [[:completed 5 nil]] (:fx (run (assoc s :conn :closed) [:complete {:prefix "ma" :token 5}])))))))
+
+(deftest closing-a-tab-from-its-button
+  (testing "a saved tab closes"
+    (is (empty? (:tabs (:state (run (opened "(ns a)") [:close-tab 1]))))))
+  (testing "a tab with unsaved changes asks first"
+    (is (= [{:kind :close :buffer 1}]
+           (:questions (:state (run (typed (opened "(ns a)") "(ns b)") [:close-tab 1])))))))
+
+(deftest the-project-name
+  (let [r  (run steps/initial-state [:connected])
+        r2 (run (:state r) (reply-to r :ok {:name "demo"}))]
+    (is (= "demo" (get-in r2 [:state :project])))
+    (testing "connecting again does not ask again"
+      (is (not-any? #(= :project (:op (second %))) (:fx (run (:state r2) [:disconnected] [:connected])))))))
+
+(deftest what-the-repls-said
+  (let [s  (opened "(ns a)\n(+ 1 2)")
+        r  (run s [:command (steps/command-by-name "eval-top-form")])
+        id (:id (second (first (:fx r))))]
+    (testing "an evaluation marks its REPL busy"
+      (is (= {:status :running :message nil} (get-in r [:state :repl :clj]))))
+    (testing "its reply says what the REPL did"
+      (let [r2 (run (:state r) [:message (p/encode (p/reply id :unavailable {:message "No REPL."}))])]
+        (is (= {:status :unavailable :message "No REPL."} (get-in r2 [:state :repl :clj])))
+        (testing "and clearing the results keeps it"
+          (is (= :unavailable (get-in (run (:state r2) [:command (steps/command-by-name "clear-results")])
+                                      [:state :repl :clj :status]))))
+        (testing "and a disconnect forgets it"
+          (is (= {} (get-in (run (:state r2) [:disconnected]) [:state :repl]))))))))

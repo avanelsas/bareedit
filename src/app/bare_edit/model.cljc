@@ -106,12 +106,6 @@
   [path]
   (last (str/split path #"/")))
 
-(defn clojure-file?
-  "Whether `path` is a Clojure file, `.clj` or `.cljc`, whose completions come from the REPL.
-  A `.cljc` file completes from the Clojure session too."
-  [path]
-  (boolean (re-find #"\.cljc?$" (str path))))
-
 (defn ns-of
   "The namespace named by the `ns` form in the Clojure source `text`, or `nil`.
   Metadata before the name, such as `^:no-doc`, is skipped."

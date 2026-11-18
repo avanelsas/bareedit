@@ -44,13 +44,6 @@
   (is (repl/done? {"id" "4" "status" ["namespace-not-found" "done" "error"]}))
   (is (not (repl/done? {"id" "1" "value" "3"}))))
 
-(deftest kinds
-  (are [path kind] (= kind (repl/kind-for path))
-    "src/a.clj"   :clj
-    "src/a.cljc"  :clj
-    "src/a.cljs"  :cljs
-    "deps.edn"    nil
-    "README.md"   nil))
 
 (deftest port-files
   (is (= [".nrepl-port" ".shadow-cljs/nrepl.port"] (get-in repl/kinds [:clj :port-files])))

@@ -43,3 +43,12 @@
       (is (= msg (p/decode (p/encode msg))))))
   (testing "text that is not EDN reads as nil"
     (is (nil? (p/decode "{:op")))))
+
+(deftest session-kinds
+  (are [path kind] (= kind (p/kind-for path))
+    "src/a.clj"   :clj
+    "src/a.cljc"  :clj
+    "src/a.cljs"  :cljs
+    "deps.edn"    nil
+    "README.md"   nil
+    nil           nil))

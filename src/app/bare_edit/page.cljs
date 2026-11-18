@@ -5,6 +5,7 @@
   render it from a state value and check which event each control sends."
   (:require [bare-edit.editor :as editor]
             [bare-edit.model :as model]
+            [bare-edit.protocol :as p]
             [bare-edit.steps :as steps]
             [clojure.string :as str]))
 
@@ -181,7 +182,7 @@
   "The results column for the state `s`, whose controls call `dispatch`: a bar and the entries."
   [{:keys [results unfolded]} dispatch]
   [:div {:class "results"}
-   [:div {:class "results-bar"}
+   [:div {:class "bar results-bar"}
     [:span "Results"]
     [:x-button {:variant "ghost" :size "sm"
                 :on-click (fn [_] (dispatch [:command (steps/command-by-name "clear-results")]))}
@@ -196,6 +197,70 @@
   (str (model/file-name (:path b))
        (cond (:deleted? b)       " (deleted)"
              (steps/unsaved? b)  " ●")))
+
+(defn tab-view
+  "The tab of the buffer `b`, with its [[tab-label]] and a button that closes it.
+  A click on the button calls `dispatch` with `[:close-tab id]` and goes no further, so
+  the tab is not selected first."
+  [{:keys [id path] :as b} dispatch]
+  [:x-tab {:value (str id) :variant "underline" :size "sm"}
+   [:span {:class "tab-name"} (tab-label b)]
+   [:span {:class "tab-close" :role "button" :title "Close tab"
+           :aria-label (str "Close " (model/file-name path))
+           :on-click (fn [^js e] (.stopPropagation e) (dispatch [:close-tab id]))}
+    "×"]])
+
+(def brand
+  "The editor's name in the style of the BareDOM logo: `<BareEdit>`, with blue brackets."
+  [:span {:class "brand"} [:span {:class "bracket"} "<"] "BareEdit" [:span {:class "bracket"} ">"]])
+
+(def kind-names
+  "The name of each session kind, as the status bar shows it."
+  {:clj "Clojure" :cljs "ClojureScript"})
+
+(def conn-states
+  "What the status bar shows for each state of the connection: its words and its tone.
+  The tone, `ok`, `busy`, `bad` or `idle`, is the class that colours the dot."
+  {:connecting {:words "connecting"   :tone "busy"}
+   :open       {:words "connected"    :tone "ok"}
+   :closed     {:words "disconnected" :tone "bad"}})
+
+(def repl-states
+  "What the status bar shows for the last status heard from a REPL: its words and its tone.
+  `nil` is a REPL that has not been used. An evaluation that failed or was interrupted
+  still had a REPL that answered, so it is ready."
+  {nil          {:words "not used yet"  :tone "idle"}
+   :running     {:words "busy"          :tone "busy"}
+   :ok          {:words "ready"         :tone "ok"}
+   :error       {:words "ready"         :tone "ok"}
+   :interrupted {:words "ready"         :tone "ok"}
+   :no-runtime  {:words "no JS runtime" :tone "bad"}
+   :unavailable {:words "unavailable"   :tone "bad"}})
+
+(defn status-bar
+  "The bar under the panes for the state `s`, whose palette button calls `dispatch`.
+  On the left it shows the project's name, the connection and the last thing heard from
+  the REPL of each session kind, see [[repl-states]], with its message as a tooltip. On the
+  right it shows the active file's session kind, the cursor's line and column, and a button
+  that opens the command palette."
+  [{:keys [project conn repl buffers active]} dispatch]
+  (let [{:keys [path state]} (get buffers active)
+        [line col]           (some-> state editor/cursor-position)]
+    [:div {:class "status-bar"}
+     [:span {:class "project"} (or project "")]
+     (let [{:keys [words tone]} (conn-states conn)]
+       [:span {:class (str "dot " tone)} words])
+     (for [kind [:clj :cljs]
+           :let [{:keys [status message]} (get repl kind)
+                 {:keys [words tone]}     (repl-states status)]]
+       [:span {:class (str "dot " tone) :title (or message "")}
+        (str (kind-names kind) ": " words)])
+     [:span {:class "fill"}]
+     [:span {:class "kind"} (or (kind-names (p/kind-for path)) "")]
+     [:span {:class "cursor"} (if line (str "Ln " line ", Col " col) "")]
+     [:x-button {:variant "ghost" :size "sm" :title "Show all commands (Mod-Shift-p or F1)"
+                 :on-click (fn [_] (dispatch [:command (steps/command-by-name "command-palette")]))}
+      "Commands"]]))
 
 (def tree-json
   "Returns the `x-tree` items for the path list `paths`, as JSON.
@@ -222,7 +287,8 @@
 (defn page
   "The page, as hiccup, for the state `s`, whose controls call `dispatch` with events.
   It reads the `:paths`, `:expanded`, `:tabs`, `:buffers`, `:active`, `:conn`,
-  `:questions`, `:palette`, `:results`, `:results-open?` and `:config` of `s`. Until the
+  `:questions`, `:palette`, `:results`, `:results-open?` and `:config` of `s`, and what
+  [[status-bar]] reads. Until the
   look and feel arrives, the `x-theme` uses its own preset. The results column is always
   on the page, so the editor never moves; when closed, its pane takes no room."
   [{:keys [tabs buffers active paths expanded conn results-open? config] :as s} dispatch]
@@ -231,26 +297,32 @@
     [:x-theme {:preset (:preset config) :class "app"}
      [:x-split-pane {:position "22" :class "panes"}
       [:div {:slot "start" :class "files"}
-       [:x-tree {:label "Files" :selection "leaf" :guides true
-                 :items (tree-json paths)
-                 :expanded (js/JSON.stringify (clj->js expanded))
-                 :selected (js/JSON.stringify (clj->js (if active-b [(:path active-b)] [])))
-                 :on-x-tree-toggle (fn [^js e] (dispatch [:expand (vec (.. e -detail -nextExpanded))]))
-                 :on-x-tree-select (fn [^js e] (dispatch [:open-file (.. e -detail -id)]))}]]
+       [:div {:class "bar files-bar"} brand]
+       [:div {:class "tree"}
+        [:x-tree {:label "Files" :selection "leaf" :guides true
+                  :items (tree-json paths)
+                  :expanded (js/JSON.stringify (clj->js expanded))
+                  :selected (js/JSON.stringify (clj->js (if active-b [(:path active-b)] [])))
+                  :on-x-tree-toggle (fn [^js e] (dispatch [:expand (vec (.. e -detail -nextExpanded))]))
+                  :on-x-tree-select (fn [^js e] (dispatch [:open-file (.. e -detail -id)]))}]]]
       [:x-split-pane {:slot "end" :class (if results-open? "inner" "inner closed")
                       :position (if results-open? "62" "100") :disabled (not results-open?)}
       [:div {:slot "start" :class "main"}
-       (if (seq tabs)
-         [:x-tabs {:value (str active) :label "Open files"
-                   :on-value-change-request (fn [^js e]
-                                              (.preventDefault e)
-                                              (dispatch [:select-tab (js/parseInt (.. e -detail -value))]))}
-          (for [id tabs]
-            [:x-tab {:value (str id) :variant "underline" :size "sm"} (tab-label (get buffers id))])]
-         [:div {:class "empty"} (if (= conn :closed) "Disconnected. Restart bare-edit." "Open a file from the tree.")])
+       ;; the tab bar shows even with no tabs, so its line meets the results bar's
+       [:x-tabs {:class "bar" :value (str active) :label "Open files"
+                 :on-value-change-request (fn [^js e]
+                                            (.preventDefault e)
+                                            (dispatch [:select-tab (js/parseInt (.. e -detail -value))]))}
+        (for [id tabs]
+          (tab-view (get buffers id) dispatch))]
        ;; hidden while the active file loads, so nothing typed lands in the previous file's text
-       [:div {:id "editor" :data-keep true :style (str fonts (when-not (:state active-b) "display:none"))}]]
+       [:div {:id "editor" :data-keep true :style (str fonts (when-not (:state active-b) "display:none"))}]
+       ;; render matches children by position, so the message comes after the editor: one
+       ;; that came before would move the editor's place, and the editor would be rebuilt
+       (when (empty? tabs)
+         [:div {:class "empty"} (if (= conn :closed) "Disconnected. Restart bare-edit." "Open a file from the tree.")])]
       [:div {:slot "end" :class "results-pane" :style fonts} (when results-open? (results-view s dispatch))]]]
+     (status-bar s dispatch)
      ;; render matches children by position, so each overlay has a fixed slot and one
      ;; appearing never moves another; the toaster keeps its toasts (:data-keep)
      [:x-toaster {:id "toaster" :data-keep true}]
