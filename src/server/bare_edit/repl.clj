@@ -240,7 +240,7 @@
   (case failure
     :dropped     [:interrupted "This evaluation waited behind one that was interrupted, so it did not run."]
     :no-repl     [:unavailable (str "No REPL is running for this project. Start an nREPL in the project folder; "
-                                    "BareEditClj reads its port from .nrepl-port or .shadow-cljs/nrepl.port.")]
+                                    "BareEdit reads its port from .nrepl-port or .shadow-cljs/nrepl.port.")]
     :no-answer   [:unavailable (str "No REPL answers on port " port ". Start the project's nREPL, or restart it.")]
     :no-describe [:unavailable "The REPL did not describe itself or give a session."]
     :no-reply    [:unavailable "The REPL did not answer."]

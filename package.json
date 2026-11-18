@@ -1,7 +1,7 @@
 {
-  "name": "bare-edit-clj",
+  "name": "bare-edit",
   "private": true,
-  "description": "BareEditClj: a small, local, browser-based editor for Clojure and ClojureScript.",
+  "description": "BareEdit: a small, local, browser-based editor for Clojure and ClojureScript.",
   "devDependencies": {
     "shadow-cljs": "3.5.14"
   },

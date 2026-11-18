@@ -1,4 +1,4 @@
-# BareEditClj
+# BareEdit
 
 A small, local, browser-based editor for Clojure and ClojureScript. A Babashka server (http-kit, one WebSocket, EDN messages) serves a ClojureScript page built with shadow-cljs, BareDOM web components and CodeMirror 6. See README.md for the tasks and the layout.
 
@@ -31,4 +31,4 @@ Docstrings follow `.claude/rules/docstrings.md`.
 
 **Commit messages and pull request titles state what changed and nothing else.** No trailers of any kind.
 
-**BareDOM is asked, never edited.** BareDOM is published and keeps its own release cycle. When BareEditClj needs something from it, say what it would have to gain and ask. A UI component comes from BareDOM first; write one here only when BareDOM cannot provide it.
+**BareDOM is asked, never edited.** BareDOM is published and keeps its own release cycle. When BareEdit needs something from it, say what it would have to gain and ask. A UI component comes from BareDOM first; write one here only when BareDOM cannot provide it.
