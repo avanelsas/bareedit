@@ -1,0 +1,81 @@
+;; nREPL message streams recorded from nREPL 1.7.0 on OpenJDK 25, without session ids.
+;; The interrupt streams are the replies to the interrupt itself; the evaluation it stops
+;; ends in its own stream with the status interrupted.
+{:lookup
+ [{"id" "2",
+   "info"
+   {"protocol" "",
+    "arglists" "([f coll] [f val coll])",
+    "name" "reduce",
+    "added" "1.0",
+    "line" 6951,
+    "column" 1,
+    "file"
+    "jar:file:/home/user/.m2/repository/org/clojure/clojure/1.12.6/clojure-1.12.6.jar!/clojure/core.clj",
+    "arglists-str" "([f coll] [f val coll])",
+    "doc"
+    "f should be a function of 2 arguments. If val is not supplied,\n  returns the result of applying f to the first 2 items in coll, then\n  applying f to that result and the 3rd item, etc. If coll contains no\n  items, f must accept no arguments as well, and reduce returns the\n  result of calling f with no arguments.  If coll has only 1 item, it\n  is returned and f is not called.  If val is supplied, returns the\n  result of applying f to val and the first item in coll, then\n  applying f to that result and the 2nd item, etc. If coll contains no\n  items, returns val and f is not called.",
+    "ns" "clojure.core"},
+   "status" ["done"]}],
+ :no-ns
+ [{"id" "4",
+   "ns" "not.loaded",
+   "status" ["namespace-not-found" "done" "error"]}],
+ :interrupt-interrupted [{"id" "8", "status" ["done"]}],
+ :value
+ [{"id" "1", "ns" "user", "value" "3"} {"id" "1", "status" ["done"]}],
+ :load-file [{"id" "7", "value" "1"} {"id" "7", "status" ["done"]}],
+ :out-value
+ [{"id" "2", "out" "computing\n"}
+  {"err" "warn\n", "id" "2"}
+  {"id" "2", "ns" "user", "value" "42"}
+  {"id" "2", "status" ["done"]}],
+ :interrupt-mismatch
+ [{"id" "7", "status" ["done" "interrupt-id-mismatch" "error"]}],
+ :many-forms
+ [{"id" "5", "ns" "user", "value" "1"}
+  {"id" "5", "ns" "user", "value" "2"}
+  {"id" "5", "ns" "user", "value" "3"}
+  {"id" "5", "status" ["done"]}],
+ :interrupted [{"id" "8", "status" ["done" "interrupted"]}],
+ :error
+ [{"err"
+   "Execution error (ArithmeticException) at user/eval2512 (REPL:1).\nDivide by zero\n",
+   "id" "3"}
+  {"ex" "class java.lang.ArithmeticException",
+   "id" "3",
+   "root-ex" "class java.lang.ArithmeticException",
+   "status" ["eval-error"]}
+  {"id" "3", "status" ["done"]}],
+ :pretty
+ [{"id" "6",
+   "ns" "user",
+   "value"
+   "{:user\n {:id 1,\n  :roles [:admin :dev :ops],\n  :prefs\n  {:theme :dark,\n   :font-size 14,\n   :tabs [\"a.clj\" \"b.cljs\" \"c.cljc\"],\n   :more (0 1 2 3 4 5 6 7 8 9 10 11)}}}"}
+  {"id" "6", "status" ["done"]}],
+ :interrupt-idle [{"id" "4", "status" ["done" "session-idle"]}],
+ :completions
+ [{"completions"
+   [{"candidate" "reduce",
+     "ns" "clojure.core",
+     "priority" 0,
+     "type" "function"}
+    {"candidate" "reduce-kv",
+     "ns" "clojure.core",
+     "priority" 0,
+     "type" "function"}
+    {"candidate" "reduced",
+     "ns" "clojure.core",
+     "priority" 0,
+     "type" "function"}
+    {"candidate" "reduced?",
+     "ns" "clojure.core",
+     "priority" 0,
+     "type" "function"}
+    {"candidate" "reductions",
+     "ns" "clojure.core",
+     "priority" 0,
+     "type" "function"}],
+   "id" "1",
+   "status" ["done"]}],
+ :lookup-unknown [{"id" "3", "info" [], "status" ["done"]}]}

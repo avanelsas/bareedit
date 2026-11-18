@@ -7,7 +7,7 @@
          :extra-paths ["test" "dev"]
          :requires ([clojure.test :as t])
          :task (let [nss '[bare-edit.protocol-test bare-edit.paths-test bare-edit.files-test bare-edit.server-test
-                           bare-edit.docstrings-test]]
+                           bare-edit.docstrings-test bare-edit.repl-test bare-edit.nrepl-test]]
                  (apply require nss)
                  (let [{:keys [fail error]} (apply t/run-tests nss)]
                    (System/exit (if (zero? (+ fail error)) 0 1))))}

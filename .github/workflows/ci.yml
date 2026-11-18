@@ -33,7 +33,10 @@ jobs:
           path: |
             ~/.m2/repository
             ~/.gitlibs
-          key: deps-${{ hashFiles('deps.edn', 'shadow-cljs.edn') }}
+          key: deps-${{ hashFiles('deps.edn', 'shadow-cljs.edn') }}-nrepl-1.7.0
+
+      - name: Fetch the nREPL for the tests
+        run: clojure -Sdeps '{:deps {nrepl/nrepl {:mvn/version "1.7.0"}}}' -P
 
       - name: Install
         run: npm ci
