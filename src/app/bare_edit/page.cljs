@@ -298,6 +298,21 @@
   (str (when font-mono (str "--x-font-family-mono:" font-mono ";"))
        (when font-size (str "--x-font-size-base:" font-size "px;"))))
 
+(defn syntax-style
+  "The CSS that sets the theme's syntax colours to the look and feel's `syntax` overrides.
+  `syntax` holds a map of token to colour for each mode, `:light` and `:dark`. Each mode's
+  colours apply only in that mode, so a colour set for one never shows in the other, and a
+  token without an override keeps the preset's colour. The rule is on the app, the
+  `x-theme` itself, so it wins over the preset's own values."
+  [{:keys [light dark]}]
+  (let [rule (fn [mode colours]
+               (when (seq colours)
+                 (str "@media (prefers-color-scheme: " mode "){.app{"
+                      (apply str (for [[token colour] (sort colours)]
+                                   (str "--x-color-syntax-" (name token) ":" colour ";")))
+                      "}}")))]
+    (str (rule "light" light) (rule "dark" dark))))
+
 (defn page
   "The page, as hiccup, for the state `s`, whose controls call `dispatch` with events.
   It reads the `:paths`, `:expanded`, `:tabs`, `:buffers`, `:active`, `:conn`,
@@ -341,4 +356,5 @@
      ;; appearing never moves another; the toaster keeps its toasts (:data-keep)
      [:x-toaster {:id "toaster" :data-keep true}]
      [:div {:class "slot"} (question-view s dispatch)]
-     [:div {:class "slot"} (palette-view s dispatch)]]))
+     [:div {:class "slot"} (palette-view s dispatch)]
+     [:style {:class "syntax"} (syntax-style (:syntax config))]]))

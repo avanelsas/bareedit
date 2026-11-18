@@ -52,7 +52,7 @@
       (spit (:config-file *srv*) "{:theme {:preset \"ocean\" :font-size \"big\"}}")
       (let [r (ask c (p/request :config 1 {}))]
         (is (= {:preset "ocean"} (:config r)))
-        (is (re-find #"Ignored :font-size" (first (:problems r))))))
+        (is (re-find #"Ignored :theme :font-size" (first (:problems r))))))
     (testing "the project's name is its folder's"
       (is (= (str (fs/file-name (:root *srv*))) (:name (ask c (p/request :project 1 {}))))))
     (testing "a malformed request with an id gets an :error reply"
