@@ -163,16 +163,65 @@
   "Tells CodeMirror's toggle comment that a Clojure line comment starts with `;;`."
   (.of (.-languageData EditorState) (fn [] #js [#js {:commentTokens #js {:line ";;"}}])))
 
+(defonce ^{:doc "The function each `EditorView` asks for completions, by view; see [[mount!]].
+  A `WeakMap`, so a view that is gone takes its entry with it."}
+  completers
+  (js/WeakMap.))
+
+(def ^:private symbol-char
+  "A regex class that matches one character a Clojure symbol may hold.
+  That is anything but whitespace, brackets, quotes and the reader's macro characters."
+  "[^\\s()\\[\\]{}\"'`,;@^~\\\\]")
+
+(def ^:private symbol-before
+  "The symbol characters before the cursor, the prefix that completions replace."
+  (re-pattern (str symbol-char "+")))
+
+(def ^:private symbol-only
+  "Text made of symbol characters only, for which a completion list stays valid while typing."
+  (re-pattern (str "^" symbol-char "*$")))
+
+(def candidate-types
+  "The CodeMirror completion type for each nREPL candidate type, which picks its icon."
+  {"function" "function" "macro" "keyword" "special-form" "keyword" "var" "variable"
+   "namespace" "namespace" "class" "class" "keyword" "constant" "method" "method"
+   "static-method" "method" "field" "property" "static-field" "property"})
+
+(defn completion-options
+  "The CodeMirror completion options for nREPL's `candidates`, a list of `{:candidate :type :ns}`.
+  Each shows its type as an icon and its namespace beside it."
+  [candidates]
+  (clj->js (for [{:keys [candidate type ns]} candidates]
+             (cond-> {:label candidate :type (get candidate-types type "text")}
+               ns (assoc :detail ns)))))
+
+(defn- complete
+  "The completion source of the editor, for the `CompletionContext` `ctx`.
+  It asks the view's completer, see [[mount!]], with the symbol before the cursor. The
+  completer returns a Promise of nREPL's candidates, or of `nil` when the file or the REPL
+  gives none; then the words of the open file are offered, as they are with no symbol
+  before the cursor."
+  [^js ctx]
+  (let [completer (some->> (.-view ctx) (.get completers))
+        ^js word  (.matchBefore ctx symbol-before)]
+    (if (and completer word)
+      (.then (completer (.-text word))
+             (fn [candidates]
+               (if candidates
+                 #js {:from (.-from word) :options (completion-options candidates) :validFor symbol-only}
+                 (completeAnyWord ctx))))
+      (completeAnyWord ctx))))
+
 (def extensions
   "The extensions every editor state gets.
   These are the undo history, [[text-layer]], clojure-mode's syntax, close brackets and
-  selection history, CodeMirror's own bracket matching, search, word completion,
+  selection history, CodeMirror's own bracket matching, search, completion (see [[complete]]),
   [[highlighting]] and [[theme]]. CodeMirror's bracket matching replaces clojure-mode's,
   which crashes on current CodeMirror versions. Nothing reformats while typing; a
   structural command tidies the lines it changed, see [[edit]]."
   #js [(history) text-layer (cm-clj/syntax) comment-tokens (close-brackets/extension)
        (sel-history/extension) (bracketMatching) (search)
-       (autocompletion #js {:override #js [completeAnyWord] :defaultKeymap false})
+       (autocompletion #js {:override #js [complete] :defaultKeymap false})
        highlighting theme])
 
 (defn new-state
@@ -321,15 +370,18 @@
   "Creates and returns the `EditorView` inside the element `parent`.
   After each update, which may hold several transactions, it calls `on-state` with the
   `EditorState` the first one started from and the new one, so the buffer holding the
-  first can store the second. The view uses
+  first can store the second. `completer` is a function from a prefix to a Promise of
+  candidates or `nil`, which [[complete]] asks. The view uses
   `root: document`, because CodeMirror would otherwise put its styles in the shadow root of
   the BareDOM slot that `parent` sits in, where they do not reach it."
-  [parent on-state]
-  (EditorView. #js {:parent parent
-                    :root js/document
-                    :state (new-state "")
-                    :dispatchTransactions (fn [^js trs ^js view]
-                                            (let [^js first-tr (aget trs 0)
-                                                  start (.-startState first-tr)]
-                                              (.update view trs)
-                                              (on-state start (.-state view))))}))
+  [parent on-state completer]
+  (let [view (EditorView. #js {:parent parent
+                               :root js/document
+                               :state (new-state "")
+                               :dispatchTransactions (fn [^js trs ^js view]
+                                                       (let [^js first-tr (aget trs 0)
+                                                             start (.-startState first-tr)]
+                                                         (.update view trs)
+                                                         (on-state start (.-state view))))})]
+    (.set completers view completer)
+    view))

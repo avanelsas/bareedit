@@ -35,6 +35,12 @@
   socket
   (atom nil))
 
+(defonce ^{:doc "The editor's completion requests that wait for their answer.
+  `:waiting` maps a token to the `resolve` function of the request's Promise, and `:last`
+  is the last token given out. Functions stay here, out of the state."}
+  completions
+  (atom {:last 0 :waiting {}}))
+
 ;; ── Effects ─────────────────────────────────────────────────────────────────
 
 (defmulti run-effect!
@@ -63,9 +69,27 @@
       (.dispatch v #js {:selection #js {:anchor pos} :scrollIntoView true})
       (.focus v))))
 
+(defmethod run-effect! :completed [[_ token candidates]]
+  (when-let [resolve (get-in @completions [:waiting token])]
+    (swap! completions update :waiting dissoc token)
+    (resolve candidates)))
+
 (defmethod run-effect! :toast [[_ type message]]
   (when-let [^js t (js/document.getElementById "toaster")]
     (.toast t #js {:type (name type) :message message :timeoutMs 6000})))
+
+(declare dispatch!)
+
+(defn- complete!
+  "Asks for the completions of `prefix` and returns a Promise of the candidates or `nil`.
+  The request runs as a `:complete` event in a microtask, because CodeMirror may ask
+  while it updates the view, and an event must not run inside that update."
+  [prefix]
+  (js/Promise.
+   (fn [resolve _reject]
+     (let [token (:last (swap! completions update :last inc))]
+       (swap! completions assoc-in [:waiting token] resolve)
+       (js/queueMicrotask #(dispatch! [:complete {:prefix prefix :token token}]))))))
 
 (defn dispatch!
   "Runs `event` through [[bare-edit.steps/step]].
@@ -162,7 +186,8 @@
   (let [app (js/document.getElementById "app")]
     (render/render! app #(page/page @state dispatch!))
     (swap! editor-view assoc :view (editor/mount! (js/document.getElementById "editor")
-                                                  (fn [old new] (dispatch! [:editor-state old new]))))
+                                                  (fn [old new] (dispatch! [:editor-state old new]))
+                                                  complete!))
     (add-watch state ::render (fn [_ _ _ s] (render/render! app #(page/page s dispatch!)))))
   (.addEventListener js/window "keydown" on-keydown)
   (.addEventListener js/window "focus" #(dispatch! [:focus]))

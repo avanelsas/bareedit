@@ -95,3 +95,14 @@
 (deftest a-command-that-changes-nothing-gives-no-transaction
   (is (nil? (editor/edit (at "|(a) b") :slurp-forward)))
   (is (nil? (editor/edit (at "(a) |b") :reindent))))
+
+(deftest completion-options
+  (is (= [{:label "map" :type "function" :detail "clojure.core"}
+          {:label "when" :type "keyword" :detail "clojure.core"}
+          {:label "my-var" :type "variable"}
+          {:label "odd" :type "text"}]
+         (js->clj (editor/completion-options [{:candidate "map" :type "function" :ns "clojure.core"}
+                                              {:candidate "when" :type "macro" :ns "clojure.core"}
+                                              {:candidate "my-var" :type "var"}
+                                              {:candidate "odd" :type "unknown"}])
+                  :keywordize-keys true))))

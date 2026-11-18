@@ -355,3 +355,22 @@
       (is (= [[:goto 3]] (:fx (run s [:jump-to 7]))))
       (let [s2 (steps/add-entry s {:id 8 :kind :eval :path "src/b.clj" :line 1})]
         (is (= :read (:op (second (first (:fx (run s2 [:jump-to 8])))))))))))
+
+(deftest completions-from-the-repl
+  (let [s (at-cursor (opened "") "(ns a.b)\n(ma|)")
+        r (run s [:complete {:prefix "ma" :token 3}])
+        [[_ req]] (:fx r)]
+    (testing "a Clojure file asks the REPL, in its namespace"
+      (is (= {:op :completions :prefix "ma" :ns "a.b"} (dissoc req :id))))
+    (testing "the candidates answer the editor's request"
+      (let [cands [{:candidate "map" :type "function" :ns "clojure.core"}]]
+        (is (= [[:completed 3 cands]] (:fx (run (:state r) (reply-to r :ok {:candidates cands})))))))
+    (testing "no REPL answers nil, so the editor offers the file's words, with no toast"
+      (is (= [[:completed 3 nil]] (:fx (run (:state r) (reply-to r :unavailable {:message "No REPL"}))))))
+    (testing "a disconnect answers the requests still waiting"
+      (is (some #{[:completed 3 nil]} (:fx (run (:state r) [:disconnected])))))
+    (testing "any other file answers nil at once"
+      (let [s2 (assoc-in s [:buffers 1 :path] "src/a.cljs")]
+        (is (= [[:completed 4 nil]] (:fx (run s2 [:complete {:prefix "ma" :token 4}]))))))
+    (testing "so does a page with no connection"
+      (is (= [[:completed 5 nil]] (:fx (run (assoc s :conn :closed) [:complete {:prefix "ma" :token 5}])))))))
