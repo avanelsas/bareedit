@@ -4,11 +4,10 @@
   (:require [bare-edit.nrepl :as nrepl]
             [bare-edit.protocol :as p]
             [bare-edit.server :as server]
+            [bare-edit.ws-client :as ws-client :refer [ask next-reply send-request]]
             [babashka.fs :as fs]
-            [babashka.http-client.websocket :as ws]
             [babashka.process :as process]
-            [clojure.test :refer [deftest is testing use-fixtures]])
-  (:import [java.util.concurrent LinkedBlockingQueue TimeUnit]))
+            [clojure.test :refer [deftest is testing use-fixtures]]))
 
 (def ^:dynamic *project*
   "The temporary project folder, where the test nREPL writes its `.nrepl-port`."
@@ -37,31 +36,9 @@
            (finally (process/destroy-tree proc))))))
 
 (defn- connect
-  "Starts the server on `dir` and opens a WebSocket to it like the editor page.
-  Returns `{:srv :ws :inbox}`, where the inbox queues each incoming message as text."
+  "Starts the server on `dir` and opens a WebSocket to it like the editor page."
   [dir]
-  (let [srv   (server/start! {:root (str dir)})
-        inbox (LinkedBlockingQueue.)
-        conn  (ws/websocket {:uri (str "ws://127.0.0.1:" (:port srv) "/ws?token=" (:token srv))
-                             :headers {"Origin" (str "http://127.0.0.1:" (:port srv))}
-                             :on-message (fn [_ws data _last] (.put inbox (str data)))})]
-    {:srv srv :ws conn :inbox inbox}))
-
-(defn- send-request
-  "Sends the request `msg` on the connection `c`."
-  [c msg]
-  (ws/send! (:ws c) (p/encode msg)))
-
-(defn- next-reply
-  "The next message on the connection `c`, or `nil` after `seconds`."
-  [c seconds]
-  (some-> (.poll ^LinkedBlockingQueue (:inbox c) seconds TimeUnit/SECONDS) p/decode))
-
-(defn- ask
-  "Sends `msg` on the connection `c` and returns its reply, waiting up to 20 seconds."
-  [c msg]
-  (send-request c msg)
-  (next-reply c 20))
+  (ws-client/connect (server/start! {:root (str dir)})))
 
 (deftest evaluation
   (let [c (connect *project*)]
@@ -89,7 +66,7 @@
         (let [r (ask c (p/request :lookup 7 {:path "src/a.clj" :sym "map" :ns "user"}))]
           (is (= "map" (get-in r [:info :name])))
           (is (string? (get-in r [:info :doc])))))
-      (testing "ClojureScript has no session yet"
+      (testing "ClojureScript needs a shadow-cljs, which this project does not run"
         (is (= :unavailable (:status (ask c (p/request :eval 8 {:path "src/a.cljs" :ns nil :line 1 :code "1"}))))))
       (finally ((:stop (:srv c)))))))
 
@@ -144,14 +121,8 @@
 
 (deftest each-connection-has-its-own-session
   (let [srv (server/start! {:root (str *project*)})
-        tab (fn []
-              (let [inbox (LinkedBlockingQueue.)]
-                {:srv srv :inbox inbox
-                 :ws (ws/websocket {:uri (str "ws://127.0.0.1:" (:port srv) "/ws?token=" (:token srv))
-                                    :headers {"Origin" (str "http://127.0.0.1:" (:port srv))}
-                                    :on-message (fn [_ws data _last] (.put inbox (str data)))})}))
-        a (tab)
-        b (tab)]
+        a   (ws-client/connect srv)
+        b   (ws-client/connect srv)]
     (try
       (send-request a (p/request :eval 1 {:path "a.clj" :ns nil :line 1 :code "(loop [i 0] (recur (inc i)))"}))
       (Thread/sleep 300)
@@ -172,13 +143,14 @@
 (deftest a-closed-tab-closes-its-session
   (let [client   (nrepl/client (str *project*))
         sessions (fn [] (let [p (promise)]
-                          (nrepl/request! client :watcher 1 {"op" "ls-sessions"} #(deliver p %))
+                          (nrepl/request! client {:channel :watcher :kind :clj :request-id 1} {"op" "ls-sessions"} #(deliver p %))
                           (set (some #(get % "sessions") (:msgs (deref p 10000 nil))))))
         result   (promise)]
     (try
-      (nrepl/request! client :tab 1 {"op" "eval" "code" "(Thread/sleep 1500)"} #(deliver result %))
+      (nrepl/request! client {:channel :tab :kind :clj :request-id 1} {"op" "eval" "code" "(Thread/sleep 1500)"}
+                      #(deliver result %))
       (Thread/sleep 300)
-      (let [tab-session (get-in @client [:sessions :tab :id])]
+      (let [tab-session (get-in @client [:sessions [:tab :clj] :id])]
         (nrepl/forget-channel! client :tab)
         (testing "a closed tab's session stays open while its evaluation runs"
           (is (contains? (sessions) tab-session)))

@@ -44,8 +44,8 @@
   (is (repl/done? {"id" "4" "status" ["namespace-not-found" "done" "error"]}))
   (is (not (repl/done? {"id" "1" "value" "3"}))))
 
-(deftest sessions
-  (are [path session] (= session (repl/session-for path))
+(deftest kinds
+  (are [path kind] (= kind (repl/kind-for path))
     "src/a.clj"   :clj
     "src/a.cljc"  :clj
     "src/a.cljs"  :cljs
@@ -53,16 +53,27 @@
     "README.md"   nil))
 
 (deftest port-files
-  (is (= [".nrepl-port" ".shadow-cljs/nrepl.port"] (repl/port-files :clj)))
-  (is (= [".shadow-cljs/nrepl.port"] (repl/port-files :cljs))))
+  (is (= [".nrepl-port" ".shadow-cljs/nrepl.port"] (get-in repl/kinds [:clj :port-files])))
+  (is (= [".shadow-cljs/nrepl.port"] (get-in repl/kinds [:cljs :port-files]))))
 
 (deftest eval-message
   (is (= {"op" "eval" "code" "(+ 1 2)" "ns" "a.core" "file" "src/a/core.clj" "line" 12
           "nrepl.middleware.print/print" "nrepl.util.print/pprint"
           "nrepl.middleware.print/options" {"right-margin" 80}}
-         (repl/eval-message {:code "(+ 1 2)" :ns "a.core" :path "src/a/core.clj" :line 12})))
-  (testing "a file without an ns form is evaluated in user"
-    (is (= "user" (get (repl/eval-message {:code "1" :ns nil :path "a.clj" :line 1}) "ns")))))
+         (repl/eval-message {:code "(+ 1 2)" :ns "a.core" :path "src/a/core.clj" :line 12} :clj)))
+  (testing "a file without an ns form is evaluated in the session's default namespace"
+    (is (= "user" (get (repl/eval-message {:code "1" :ns nil :path "a.clj" :line 1} :clj) "ns")))
+    (is (= "cljs.user" (get (repl/eval-message {:code "1" :ns nil :path "a.cljs" :line 1} :cljs) "ns")))))
+
+(deftest load-file-messages
+  (testing "Clojure loads the text with nREPL's load-file"
+    (is (= {"op" "load-file" "file" "(ns a)" "file-path" "src/a.clj" "file-name" "a.clj"}
+           (select-keys (repl/load-file-message {:path "src/a.clj" :text "(ns a)"} :clj)
+                        ["op" "file" "file-path" "file-name"]))))
+  (testing "ClojureScript evaluates the whole text, since shadow-cljs's load-file reads the disk"
+    (is (= {"op" "eval" "code" "(ns a)" "ns" "cljs.user" "file" "src/a.cljs" "line" 1}
+           (select-keys (repl/load-file-message {:path "src/a.cljs" :text "(ns a)"} :cljs)
+                        ["op" "code" "ns" "file" "line"])))))
 
 (deftest interrupt-warning
   (are [java flag warning?] (= warning? (some? (repl/interrupt-warning {:java java :attach-flag flag})))
@@ -111,3 +122,69 @@
            (repl/failure-reply {:failure :missing-op :op "lookup"})))
     (doseq [k [:no-repl :no-describe :no-reply :no-session :lost]]
       (is (= :unavailable (first (repl/failure-reply {:failure k}))) (str k)))))
+
+(def shadow-streams
+  "The nREPL message streams recorded from shadow-cljs, by case."
+  (edn/read-string (slurp (io/resource "bare_edit/shadow_streams.edn"))))
+
+(defn- fold-cljs
+  "The ClojureScript reply for the recorded shadow-cljs stream `k`."
+  [k]
+  (repl/fold-cljs-eval (shadow-streams k)))
+
+(deftest folding-clojurescript-evaluations
+  (are [k reply] (= reply (fold-cljs k))
+    :value        {:status :ok :out "" :err "" :value "3"}
+    :out-value    {:status :ok :out "hi\n" :err "" :value "42"}
+    :many-forms   {:status :ok :out "" :err "" :value "3"}
+    :file-as-eval {:status :ok :out "" :err "" :value ":g3"}
+    :with-state   {:status :ok :out "" :err "" :value "3"})
+  (testing "a thrown exception is an :error naming its class, with shadow's text in :err"
+    (is (= [:error "The evaluation threw Error." nil] ((juxt :status :message :value) (fold-cljs :js-error))))
+    (is (= "The evaluation threw ExceptionInfo." (:message (fold-cljs :ex-info))))
+    (is (re-find #"boom" (:err (fold-cljs :js-error)))))
+  (testing "a form that does not read is an :error"
+    (is (= [:error "The code could not be read or compiled."] ((juxt :status :message) (fold-cljs :read-error)))))
+  (testing "a warning that comes with a value is :ok, and the warning stays in :err"
+    (is (= [:ok "nil"] ((juxt :status :value) (fold-cljs :undeclared))))
+    (is (re-find #"undeclared Var /nope" (:err (fold-cljs :undeclared)))))
+  (testing "no JS runtime, or a stopped watch, is :no-runtime"
+    (is (= :no-runtime (:status (fold-cljs :no-runtime))))
+    (is (re-find #"No JS runtime" (:message (fold-cljs :no-runtime))))
+    (is (= :no-runtime (:status (fold-cljs :worker-exited))))
+    (is (re-find #"watch stopped" (:message (fold-cljs :worker-exited)))))
+  (testing "every folded reply is a well-formed :eval reply"
+    (doseq [k (keys shadow-streams)
+            :when (not (#{:switch :switch-no-watch :builds-none :builds-two} k))]
+      (is (nil? (p/reply-problems :eval (assoc (fold-cljs k) :id 1))) (str k)))))
+
+(deftest stopped-watches
+  (is (repl/worker-exited? (shadow-streams :worker-exited)))
+  (is (not (repl/worker-exited? (shadow-streams :no-runtime)))))
+
+(deftest choosing-the-build
+  (testing "the running builds are read from shadow's answer"
+    (is (= #{} (repl/read-builds (some #(get % "value") (shadow-streams :builds-none)))))
+    (is (= #{:app :other} (repl/read-builds (some #(get % "value") (shadow-streams :builds-two)))))
+    (is (= #{} (repl/read-builds nil)))
+    (is (= #{} (repl/read-builds "[:not :a-set]"))))
+  (are [active named want] (= want (repl/choose-build active named))
+    #{}            nil   {:failure :no-watch}
+    #{:app}        nil   {:build :app}
+    #{:app :other} nil   {:failure :several-builds :builds [:app :other]}
+    #{:app :other} :app  {:build :app}
+    #{:app}        :nope {:failure :build-not-running :build :nope}))
+
+(deftest switching-a-session
+  (is (repl/switched? (shadow-streams :switch)))
+  (is (not (repl/switched? (shadow-streams :switch-no-watch))))
+  (is (= "(shadow.cljs.devtools.api/repl :app)" (repl/switch-code :app))))
+
+(deftest clojurescript-failures
+  (are [failure status words] (let [[s m] (repl/failure-reply failure)]
+                                (and (= status s) (re-find words m)))
+    {:failure :no-shadow}                          :unavailable #"No shadow-cljs is running"
+    {:failure :no-watch}                           :no-runtime  #"No shadow-cljs watch"
+    {:failure :build-not-running :build :nope}     :no-runtime  #":nope named with --build"
+    {:failure :several-builds :builds [:a :b]}     :unavailable #":a, :b.*--build"
+    {:failure :cljs-interrupt}                     :unavailable #"cannot be interrupted"))

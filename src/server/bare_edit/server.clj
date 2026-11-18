@@ -50,48 +50,43 @@
 ;; ── The REPL ───────────────────────────────────────────────────────────────
 ;; A REPL operation answers later, through the connection's `:reply!`, so its method
 ;; returns nil. Each request in flight is known by its channel and id, because an id is
-;; unique only within one page, and each channel has its own nREPL session.
+;; unique only within one page, and each channel has its own nREPL sessions.
 
 (defn- repl-request!
-  "Sends `msg` to the REPL for the request `id` from the connection in `ctx`.
+  "Sends `msg` to the REPL session `kind` for the request `id` from the connection in `ctx`.
   The reply is `(->reply msgs)` when the REPL is done, as `->reply` folds the nREPL
   messages. A failure replies with the status and message of [[repl/failure-reply]].
   Returns `nil`, since the reply comes later."
-  [{:keys [repl reply! channel]} id msg ->reply]
-  (nrepl/request! repl channel id msg
+  [{:keys [repl reply! channel]} kind id msg ->reply]
+  (nrepl/request! repl {:channel channel :kind kind :request-id id} msg
                   (fn [{:keys [msgs failure] :as result}]
                     (reply! (if failure
                               (apply p/failure id (repl/failure-reply result))
                               (assoc (->reply msgs) :id id)))))
   nil)
 
-(defn- clojure-only
-  "The reply refusing the request `id` for `path`, or `nil` when `path` is Clojure code.
-  ClojureScript has no session yet, and other files are not code."
-  [id path]
-  (case (repl/session-for path)
-    :clj  nil
-    :cljs (p/failure id :unavailable "ClojureScript evaluation is not available yet.")
-    (p/failure id :error (str path " is not a Clojure file."))))
+(defn- evaluate
+  "Evaluates the request `req` from the connection in `ctx` in the session of its file.
+  `->msg` builds the nREPL message from the request and the session kind. A path outside
+  the project, or a file that is not Clojure or ClojureScript code, is refused."
+  [ctx {:keys [id path] :as req} ->msg]
+  (let [kind (repl/kind-for path)]
+    (cond
+      (outside (:root ctx) [path]) (p/failure id :error (str "Not a file in this project: " path))
+      (nil? kind)                  (p/failure id :error (str path " is not a Clojure or ClojureScript file."))
+      :else                        (repl-request! ctx kind id (->msg req kind) (get-in repl/kinds [kind :fold])))))
 
-(defmethod handle :eval [ctx {:keys [id path] :as req}]
-  (or (when (outside (:root ctx) [path]) (p/failure id :error (str "Not a file in this project: " path)))
-      (clojure-only id path)
-      (repl-request! ctx id (repl/eval-message req) repl/fold-eval)))
-
-(defmethod handle :load-file [ctx {:keys [id path] :as req}]
-  (or (when (outside (:root ctx) [path]) (p/failure id :error (str "Not a file in this project: " path)))
-      (clojure-only id path)
-      (repl-request! ctx id (repl/load-file-message req) repl/fold-eval)))
+(defmethod handle :eval      [ctx req] (evaluate ctx req repl/eval-message))
+(defmethod handle :load-file [ctx req] (evaluate ctx req repl/load-file-message))
 
 (defmethod handle :completions [ctx {:keys [id prefix ns]}]
   ;; the browser asks only for .clj and .cljc files; a .cljs file completes from its words
-  (repl-request! ctx id {"op" "completions" "prefix" prefix "ns" (or ns "user")} repl/fold-completions))
+  (repl-request! ctx :clj id {"op" "completions" "prefix" prefix "ns" (or ns "user")} repl/fold-completions))
 
 (defmethod handle :lookup [ctx {:keys [id path sym ns]}]
-  (or (when (= :cljs (repl/session-for path))
+  (or (when (= :cljs (repl/kind-for path))
         (p/failure id :unavailable "Docs are available for Clojure only."))
-      (repl-request! ctx id {"op" "lookup" "sym" sym "ns" (or ns "user")} repl/fold-lookup)))
+      (repl-request! ctx :clj id {"op" "lookup" "sym" sym "ns" (or ns "user")} repl/fold-lookup)))
 
 (defmethod handle :interrupt [{:keys [repl reply! channel]} {:keys [id] eval-id :eval}]
   ;; an evaluation that already finished is not in flight, and nothing happens
@@ -195,16 +190,17 @@
 
 (defn start!
   "Starts the server for the project at `:root` in `opts`, on `127.0.0.1` and a free port.
-  Returns the context as a value: `opts` with the canonical `:root`, and `:port`,
-  `:token`, `:repl`, the client for the project's nREPL, `:url`, and `:stop`, a function
-  that stops the server and closes the REPL connection."
+  `:build` in `opts` is the shadow-cljs build named with `--build`, if any. Returns the
+  context as a value: `opts` with the canonical `:root`, and `:port`, `:token`, `:repl`,
+  the client for the project's nREPLs, `:url`, and `:stop`, a function that stops the
+  server and closes the REPL connections."
   [{:keys [root] :as opts}]
   (let [ctx    (promise)
         server (hk/run-server (app ctx) {:ip "127.0.0.1" :port 0 :legacy-return-value? false})
         port   (hk/server-port server)
         token  (new-token)
         root   (str (fs/canonicalize root))
-        client (nrepl/client root)]
+        client (nrepl/client root (:build opts))]
     (deliver ctx (assoc opts :root root :port port :token token :repl client))
     (assoc @ctx
            :url (str "http://127.0.0.1:" port "/?token=" token)

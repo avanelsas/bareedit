@@ -1,0 +1,61 @@
+;; nREPL message streams recorded from shadow-cljs 3.5.14 on OpenJDK 25, with a
+;; :node-script build and node as the JS runtime. Session ids are left out.
+{:value
+ [{"id" "3" "ns" "cljs.user" "value" "3"}
+  {"id" "3" "status" ["done"]}]
+ :out-value
+ [{"id" "4" "out" "hi"}
+  {"id" "4" "out" "\n"}
+  {"id" "4" "ns" "cljs.user" "value" "42"}
+  {"id" "4" "status" ["done"]}]
+ :many-forms
+ [{"id" "13" "ns" "cljs.user" "value" "1"}
+  {"id" "13" "ns" "cljs.user" "value" "2"}
+  {"id" "13" "ns" "cljs.user" "value" "3"}
+  {"id" "13" "status" ["done"]}]
+ :file-as-eval
+ [{"id" "3" "ns" "demo.util" "value" "nil"}
+  {"id" "3" "ns" "demo.util" "printed-value" 1 "value" "#'demo.util/g"}
+  {"id" "3" "ns" "demo.util" "value" ":g3"}
+  {"id" "3" "status" ["done"]}]
+ :no-runtime
+ [{"err" "No available JS runtime.\nSee https://shadow-cljs.github.io/docs/UsersGuide.html#repl-troubleshooting" "id" "6"}
+  {"id" "6" "ns" "cljs.user" "printed-value" 1 "value" "nil"}
+  {"id" "6" "status" ["done"]}]
+ :js-error
+ [{"err" "\nExecution error (Error) at (<cljs repl>:1).\nboom\n" "id" "9"}
+  {"id" "9" "ns" "cljs.user" "value" ":repl/exception!"}
+  {"id" "9" "status" ["done"]}]
+ :ex-info
+ [{"err" "\nExecution error (ExceptionInfo) at (<cljs repl>:1).\nbad\n" "id" "10"}
+  {"id" "10" "ns" "cljs.user" "value" ":repl/exception!"}
+  {"id" "10" "status" ["done"]}]
+ :read-error
+ [{"err" "[line 1, col 5] Unexpected EOF while reading item 2 of list, starting at line 1 and column 1." "id" "11"}
+  {"id" "11" "status" ["done"]}]
+ :undeclared
+ [{"err" "------ WARNING - :undeclared-var -----------------------------------------------\n Resource: <eval>:1:2\n Use of undeclared Var /nope\n--------------------------------------------------------------------------------\n\n" "id" "12"}
+  {"id" "12" "ns" "cljs.user" "printed-value" 1 "value" "nil"}
+  {"id" "12" "status" ["done"]}]
+ :worker-exited
+ [{"err" "The worker for this REPL has exited. You are now in CLJ again.\n" "id" "6"}
+  {"id" "6" "ns" "shadow.user" "printed-value" 1 "value" "nil"}
+  {"id" "6" "status" ["done"]}]
+ :with-state
+ [{"changed-namespaces" {} "id" "3" "repl-type" "cljs" "status" ["state"]}
+  {"id" "3" "ns" "cljs.user" "value" "3"}
+  {"id" "3" "status" ["done"]}]
+ :switch
+ [{"id" "2" "out" "To quit, type: :cljs/quit\n"}
+  {"id" "2" "ns" "cljs.user" "value" "[:selected :app]"}
+  {"id" "2" "status" ["done"]}]
+ :switch-no-watch
+ [{"err" "Execution error (ExceptionInfo) at shadow.cljs.devtools.server.nrepl-impl/repl-init (nrepl_impl.clj:30).\nwatch for build not running\n" "id" "3"}
+  {"ex" "class clojure.lang.ExceptionInfo" "id" "3" "root-ex" "class clojure.lang.ExceptionInfo" "status" ["eval-error"]}
+  {"id" "3" "status" ["done"]}]
+ :builds-none
+ [{"id" "2" "ns" "shadow.user" "value" "#{}"}
+  {"id" "2" "status" ["done"]}]
+ :builds-two
+ [{"id" "6" "ns" "shadow.user" "value" "#{:other :app}"}
+  {"id" "6" "status" ["done"]}]}
