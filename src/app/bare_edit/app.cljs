@@ -52,11 +52,20 @@
 (defmethod run-effect! :edit [[_ id]]
   (some-> ^js (:view @editor-view) (editor/run-command! id)))
 
+(declare sync-view!)
+
+(defmethod run-effect! :goto [[_ line]]
+  ;; the view shows the active buffer first, since the step may have just switched to it
+  (sync-view! @state)
+  (when-let [^js v (:view @editor-view)]
+    (let [doc (.. v -state -doc)
+          pos (.-from (.line doc (max 1 (min line (.-lines doc)))))]
+      (.dispatch v #js {:selection #js {:anchor pos} :scrollIntoView true})
+      (.focus v))))
+
 (defmethod run-effect! :toast [[_ type message]]
   (when-let [^js t (js/document.getElementById "toaster")]
     (.toast t #js {:type (name type) :message message :timeoutMs 6000})))
-
-(declare sync-view!)
 
 (defn dispatch!
   "Runs `event` through [[bare-edit.steps/step]].

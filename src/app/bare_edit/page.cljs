@@ -3,8 +3,10 @@
   Every handler on the page does one thing: it calls `dispatch` with an event vector, see
   [[bare-edit.steps/step]]. The page reads nothing else and changes nothing, so a test can
   render it from a state value and check which event each control sends."
-  (:require [bare-edit.model :as model]
-            [bare-edit.steps :as steps]))
+  (:require [bare-edit.editor :as editor]
+            [bare-edit.model :as model]
+            [bare-edit.steps :as steps]
+            [clojure.string :as str]))
 
 (defn- button
   "An `x-button` of `variant` showing `label` that calls `on-click`."
@@ -101,6 +103,93 @@
                                             (.preventDefault e)
                                             (dispatch [:palette-close]))}]))
 
+(def fold-lines
+  "How many lines of a value or of output a folded results entry shows."
+  8)
+
+(defn folded
+  "The text `text` cut to its first [[fold-lines]] lines, unless `expanded?`.
+  Returns `[shown cut?]`, where `cut?` says whether lines were left out."
+  [text expanded?]
+  (let [lines (str/split-lines (str text))]
+    (if (or expanded? (<= (count lines) fold-lines))
+      [(str text) false]
+      [(str/join "\n" (take fold-lines lines)) true])))
+
+(defn- code-view
+  "The Clojure text `text`, highlighted, in a `pre` of `class`."
+  [class text]
+  [:pre {:class class}
+   (for [[piece cls] (editor/highlighted text)]
+     (if cls [:span {:class cls} piece] piece))])
+
+(def status-marks
+  "The mark in a results entry's header for each status."
+  {:running "…" :ok "✓" :error "✗" :interrupted "■" :unavailable "!" :no-runtime "!" :conflict "!"})
+
+(defn entry-title
+  "The heading of the results entry `entry`, after its status mark."
+  [{:keys [kind path line form sym]}]
+  (case kind
+    :eval (str (model/file-name path) ":" line "  " (model/form-head form 50))
+    :doc  (str "Docs: " sym)
+    :out  "Output"))
+
+(defn- entry-body
+  "The body of the results entry `entry`, whose controls call `dispatch`.
+  Output comes first, then the value, the docs or the message. Long text is folded, see
+  [[folded]], unless `expanded?`, with a button that shows it all."
+  [{:keys [id kind status out err value message info sym]} expanded? dispatch]
+  (let [[out out-cut?]     (folded out expanded?)
+        [value value-cut?] (folded value expanded?)
+        cut?               (or out-cut? value-cut?)]
+    [:div {:class "entry-body"}
+     (when (seq out) [:pre {:class "out"} out])
+     (when (seq err) [:pre {:class "err"} err])
+     (case status
+       :running [:x-button {:variant "secondary" :size "sm" :on-click (fn [_] (dispatch [:interrupt id]))}
+                 "Interrupt"]
+       :ok      (case kind
+                  :eval (code-view "value" value)
+                  :doc  (if (seq info)
+                          [:div {:class "doc"}
+                           [:code (str (:ns info) (when (:ns info) "/") (:name info))]
+                           (when-let [args (:arglists-str info)] (code-view "value" args))
+                           (when-let [doc (:doc info)] [:pre {:class "out"} doc])]
+                          [:div {:class "message"} (str "No docs for " sym ".")])
+                  nil)
+       nil      nil
+       [:div {:class "message"} message])
+     (when (or cut? expanded?)
+       [:x-button {:variant "ghost" :size "sm" :on-click (fn [_] (dispatch [:unfold id]))}
+        (if expanded? "Show less" "Show all")])]))
+
+(defn entry-view
+  "The results entry `entry`, shown in full when `expanded?`, whose controls call `dispatch`.
+  Its header shows the status mark and the heading, and a click on it calls `dispatch` with
+  `[:jump-to id]` when the entry has code to go to."
+  [{:keys [id status path] :as entry} expanded? dispatch]
+  [:div {:class "entry"}
+   [:div (if path
+           {:class "entry-head jumps" :on-click (fn [_] (dispatch [:jump-to id]))}
+           {:class "entry-head"})
+    [:span {:class (str "mark " (some-> status name))} (get status-marks status "")]
+    [:span {:class "title"} (entry-title entry)]]
+   (entry-body entry expanded? dispatch)])
+
+(defn results-view
+  "The results column for the state `s`, whose controls call `dispatch`: a bar and the entries."
+  [{:keys [results unfolded]} dispatch]
+  [:div {:class "results"}
+   [:div {:class "results-bar"}
+    [:span "Results"]
+    [:x-button {:variant "ghost" :size "sm"
+                :on-click (fn [_] (dispatch [:command (steps/command-by-name "clear-results")]))}
+     "Clear"]]
+   (if (seq results)
+     [:div {:class "entries"} (for [e results] (entry-view e (contains? unfolded (:id e)) dispatch))]
+     [:div {:class "empty"} "Evaluate a form to see its result here."])])
+
 (defn tab-label
   "The tab text for the buffer `b`: its file name, marked when deleted or unsaved."
   [b]
@@ -124,8 +213,9 @@
 (defn page
   "The page, as hiccup, for the state `s`, whose controls call `dispatch` with events.
   It reads the `:paths`, `:expanded`, `:tabs`, `:buffers`, `:active`, `:conn`,
-  `:questions` and `:palette` of `s`."
-  [{:keys [tabs buffers active paths expanded conn] :as s} dispatch]
+  `:questions`, `:palette`, `:results` and `:results-open?` of `s`. The results column is
+  always on the page, so the editor never moves; when closed, its pane takes no room."
+  [{:keys [tabs buffers active paths expanded conn results-open?] :as s} dispatch]
   (let [active-b (get buffers active)]
     [:x-theme {:preset "default" :class "app"}
      [:x-split-pane {:position "22" :class "panes"}
@@ -136,7 +226,9 @@
                  :selected (js/JSON.stringify (clj->js (if active-b [(:path active-b)] [])))
                  :on-x-tree-toggle (fn [^js e] (dispatch [:expand (vec (.. e -detail -nextExpanded))]))
                  :on-x-tree-select (fn [^js e] (dispatch [:open-file (.. e -detail -id)]))}]]
-      [:div {:slot "end" :class "main"}
+      [:x-split-pane {:slot "end" :class (if results-open? "inner" "inner closed")
+                      :position (if results-open? "62" "100") :disabled (not results-open?)}
+      [:div {:slot "start" :class "main"}
        (if (seq tabs)
          [:x-tabs {:value (str active) :label "Open files"
                    :on-value-change-request (fn [^js e]
@@ -146,7 +238,8 @@
             [:x-tab {:value (str id) :variant "underline" :size "sm"} (tab-label (get buffers id))])]
          [:div {:class "empty"} (if (= conn :closed) "Disconnected. Restart bare-edit." "Open a file from the tree.")])
        ;; hidden while the active file loads, so nothing typed lands in the previous file's text
-       [:div {:id "editor" :data-keep true :style (if (:state active-b) "" "display:none")}]]]
+       [:div {:id "editor" :data-keep true :style (if (:state active-b) "" "display:none")}]]
+      [:div {:slot "end" :class "results-pane"} (when results-open? (results-view s dispatch))]]]
      ;; render matches children by position, so each overlay has a fixed slot and one
      ;; appearing never moves another; the toaster keeps its toasts (:data-keep)
      [:x-toaster {:id "toaster" :data-keep true}]

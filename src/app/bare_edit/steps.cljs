@@ -7,6 +7,7 @@
 
   - `[:send request]` sends the request on the WebSocket.
   - `[:toast type message]` shows a toast.
+  - `[:goto line]` moves the cursor to the start of `line` in the editor.
 
   [[bare-edit.app/dispatch!]] stores the state once and then runs the effects, so a step
   never touches the atom, the socket or the page."
@@ -20,8 +21,10 @@
   `:pending` maps a request id to its request until the reply arrives. `:buffers` maps a
   buffer id to its buffer, and `:tabs` holds buffer ids in order. `:questions` is the
   queue of open questions; the page shows the first, see [[ask]]. `:palette` is the open
-  palette, `{:kind :query}` with `:kind` `:files` or `:commands`, or `nil`. `:conn` is
-  `:connecting`, `:open` or `:closed`."
+  palette, `{:kind :query}` with `:kind` `:files` or `:commands`, or `nil`. `:results`
+  holds the entries of the results column, newest first, see [[add-entry]].
+  `:results-open?` says whether the column shows, and `:unfolded` holds the ids of the
+  entries shown in full. `:conn` is `:connecting`, `:open` or `:closed`."
   {:conn :connecting
    :next-id 1
    :next-buffer 1
@@ -32,14 +35,18 @@
    :tabs []
    :active nil
    :questions []
-   :palette nil})
+   :palette nil
+   :results []
+   :results-open? true
+   :unfolded #{}})
 
 (def effect-kinds
   "Every kind of effect a step can return, as the first element of the effect.
   `[:send request]` sends a request, `[:toast type message]` shows a toast,
   `[:focus-editor]` gives the editor the keyboard focus, and `[:edit id]` runs the editor
-  command `id` on the editor, see [[bare-edit.editor/run-command!]]."
-  #{:send :toast :focus-editor :edit})
+  command `id` on the editor, see [[bare-edit.editor/run-command!]]. `[:goto line]` moves
+  the cursor to `line` in the active buffer and gives the editor the focus."
+  #{:send :toast :focus-editor :edit :goto})
 
 ;; ── Results ─────────────────────────────────────────────────────────────────
 
@@ -58,6 +65,11 @@
   [r type message]
   (update r :fx conj [:toast type message]))
 
+(defn connected?
+  "Whether the state `s` has an open connection to the server."
+  [s]
+  (= :open (:conn s)))
+
 (defn send
   "Returns the result `r` with a request for the operation `op` with `args` to send.
   The request gets the next id and is kept in `:pending` until its reply arrives, so the
@@ -67,7 +79,7 @@
   instead."
   ([r op args] (send r op args nil))
   ([{s :state :as r} op args then]
-   (if (not= :open (:conn s))
+   (if-not (connected? s)
      (toast r :error "Not connected to bare-edit. Restart it to keep editing.")
      (let [req (p/request op (:next-id s) args)]
        (-> r
@@ -160,6 +172,77 @@
         :close        (close-buffer s id)
         :mark-deleted (update-in s [:buffers id] assoc :disk-text "" :disk-version :absent :deleted? true)))))
 
+;; ── The results column ──────────────────────────────────────────────────────
+
+(def max-results
+  "How many entries the results column keeps. Older ones are dropped."
+  100)
+
+(defn add-entry
+  "Returns the state `s` with `entry` at the top of the results column.
+  An entry records what happened, as a map with an `:id` and a `:kind`:
+
+  - `:eval` is an evaluation, with the `:path` and `:line` of its code, its `:form`, and the
+    reply's `:status`, `:out`, `:err`, `:value` and `:message` once it arrives.
+  - `:doc` is a docs lookup of `:sym`, with the reply's `:info`.
+  - `:out` is output that belongs to no evaluation, in `:out`.
+
+  An entry whose request waits for its reply has the status `:running`. Only the newest
+  [[max-results]] entries are kept."
+  [s entry]
+  (update s :results #(into [entry] (take (dec max-results)) %)))
+
+(defn show-results
+  "Returns the state `s` with the results column shown.
+  A new entry shows it, so the result of a command is never hidden."
+  [s]
+  (assoc s :results-open? true))
+
+(defn update-entry
+  "Returns the state `s` with `f` and `args` applied to the results entry `id`, if it is there."
+  [s id f & args]
+  (update s :results (fn [rs] (mapv #(if (= id (:id %)) (apply f % args) %) rs))))
+
+(defn- send-with-entry
+  "Returns the result `r` with a request for `op` with `args` to send, and `entry` for it.
+  The entry gets the request's id and the status `:running`, see [[add-entry]], and the
+  column shows. Without a connection, [[send]] adds its toast and there is no entry."
+  [{s :state :as r} op args entry]
+  (if (connected? s)
+    (-> r
+        (send op args)
+        (change #(-> % (add-entry (assoc entry :id (:next-id s) :status :running)) show-results)))
+    (send r op args)))
+
+(defn- active-buffer
+  "The active buffer of the state `s`, when it is loaded, or `nil`."
+  [s]
+  (let [b (get-in s [:buffers (:active s)])]
+    (when (:state b) b)))
+
+(defn evaluate
+  "Returns the result `r` with the form that `form-at` finds in the active buffer evaluated.
+  `form-at` is a function from an `EditorState` to `{:code :line}` or `nil`, such as
+  [[bare-edit.editor/form-at]]. The form is evaluated in the namespace of the buffer's `ns`
+  form. With no form there, nothing happens."
+  [{s :state :as r} form-at]
+  (let [{:keys [path state] :as b} (active-buffer s)]
+    (if-let [{:keys [code line]} (some-> b :state form-at)]
+      (send-with-entry r :eval {:path path :ns (model/ns-of (editor/text state)) :line line :code code}
+                       {:kind :eval :path path :line line :form code})
+      r)))
+
+(defn newest-running
+  "The id of the newest evaluation in the state `s` that waits for its reply, or `nil`."
+  [s]
+  (some #(when (and (= :eval (:kind %)) (= :running (:status %))) (:id %)) (:results s)))
+
+(defn interrupt
+  "Returns the result `r` with an interrupt of the evaluation `id` to send.
+  With no `id`, there is nothing to interrupt and `r` is returned as it is."
+  [r id]
+  (cond-> r id (send :interrupt {:eval id})))
+
 ;; ── Actions shared by several events ────────────────────────────────────────
 
 (defn refresh
@@ -168,7 +251,7 @@
   runs on connecting and when the window gets focus. Before the connection opens, there is
   nothing to refresh."
   [{s :state :as r}]
-  (if (not= :open (:conn s))
+  (if-not (connected? s)
     r
     (let [paths (->> (vals (:buffers s)) (remove :loading?) (map :path) distinct vec)]
       (cond-> (send r :paths {})
@@ -214,8 +297,9 @@
   "The editor's commands, as plain data.
   Each has an `:id`, a `:label` and optional `:keys` in CodeMirror's key syntax, a string or
   a vector of strings. A command with `:palette? false` is left out of the command palette.
-  A command with `:scope :editor` works on the text: its keys act only while the editor has
-  the focus, and it runs on the editor, see [[bare-edit.editor/run-command!]].
+  A command with `:scope :editor` works on the text, so its keys act only while the editor
+  has the focus. The commands the editor itself runs are those of
+  [[bare-edit.editor/command?]].
   [[bare-edit.keys/key-index]] reads this list, the command palette shows it, and
   [[run-command]] runs its entries."
   [{:id :save              :label "Save"              :keys "Mod-s"}
@@ -228,6 +312,13 @@
    {:id :close-palette     :label "Close the palette" :keys "Escape" :palette? false}
    {:id :new-file          :label "New file"}
    {:id :refresh-file-tree :label "Refresh file tree"}
+   {:id :eval-form         :label "Evaluate form"      :keys "Mod-Enter"       :scope :editor}
+   {:id :eval-top-form     :label "Evaluate top-level form" :keys "Mod-Shift-Enter" :scope :editor}
+   {:id :eval-file         :label "Evaluate file"}
+   {:id :interrupt         :label "Interrupt evaluation" :keys "Mod-."}
+   {:id :show-docs         :label "Show docs"}
+   {:id :clear-results     :label "Clear results"}
+   {:id :toggle-results    :label "Toggle results column"}
    {:id :find              :label "Find and replace"   :keys "Mod-f"         :scope :editor}
    {:id :toggle-comment    :label "Toggle comment"     :keys "Mod-/"         :scope :editor}
    {:id :show-completions  :label "Show completions"   :keys "Ctrl-Space"    :scope :editor}
@@ -243,10 +334,10 @@
 
 (defn command-dispatch
   "The value [[run-command]] dispatches `command` on.
-  It is `::editor` for a command with `:scope :editor`, since all of those run on the
-  editor the same way, and otherwise the command's `:id`."
+  It is `::editor` for a command the editor runs, see [[bare-edit.editor/command?]], since
+  all of those run the same way, and otherwise the command's `:id`."
   [_r command]
-  (if (= :editor (:scope command)) ::editor (:id command)))
+  (if (editor/command? (:id command)) ::editor (:id command)))
 
 (defmulti run-command
   "Returns the result `r` after running `command`, dispatched by [[command-dispatch]]."
@@ -296,6 +387,25 @@
 
 (defmethod run-command :refresh-file-tree [r _] (send r :paths {}))
 
+(defmethod run-command :eval-form      [r _] (evaluate r editor/form-at))
+(defmethod run-command :eval-top-form  [r _] (evaluate r editor/top-level-form-at))
+(defmethod run-command :interrupt      [r _] (interrupt r (newest-running (:state r))))
+(defmethod run-command :clear-results  [r _] (change r assoc :results [] :unfolded #{}))
+(defmethod run-command :toggle-results [r _] (change r update :results-open? not))
+
+(defmethod run-command :eval-file [{s :state :as r} _]
+  (if-let [{:keys [path state]} (active-buffer s)]
+    (send-with-entry r :load-file {:path path :text (editor/text state)}
+                     {:kind :eval :path path :line 1 :form (str "(load-file \"" path "\")")})
+    r))
+
+(defmethod run-command :show-docs [{s :state :as r} _]
+  (let [{:keys [path state]} (active-buffer s)]
+    (if-let [sym (some-> state editor/symbol-at)]
+      (send-with-entry r :lookup {:path path :sym sym :ns (model/ns-of (editor/text state))}
+                       {:kind :doc :path path :sym sym})
+      r)))
+
 ;; ── Replies ─────────────────────────────────────────────────────────────────
 
 (defmulti on-reply
@@ -304,8 +414,10 @@
   each open buffer of a file its disk value; when it fails, the tabs still loading close. `:save` records the sent text as the disk
   text and runs the request's `:then` (`[:close-tab id]` closes the tab, asking again if it
   has unsaved changes by then), and a save that created the file asks for the path list
-  again. It reads the file again on `:conflict`. Any
-  other reply that is not `:ok` shows its message as a toast."
+  again. It reads the file again on `:conflict`. An `:eval`, `:load-file` or `:lookup`
+  reply fills in its results entry, whatever its status. An `:interrupt` reply shows its
+  message, if any, as a toast. Any other reply that is not `:ok` shows its message as a
+  toast."
   (fn [_r req _reply] (:op req)))
 
 (defmethod on-reply :default [r _req {:keys [status message]}]
@@ -328,6 +440,18 @@
                                                      :when (get-in s [:buffers id :loading?])]
                                                  id))))
         (toast :error message))))
+
+(defn- fill-entry
+  "Returns the result `r` with `reply` merged into the results entry of the same id."
+  [r reply]
+  (change r update-entry (:id reply) merge (dissoc reply :id)))
+
+(defmethod on-reply :eval      [r _req reply] (fill-entry r reply))
+(defmethod on-reply :load-file [r _req reply] (fill-entry r reply))
+(defmethod on-reply :lookup    [r _req reply] (fill-entry r reply))
+
+(defmethod on-reply :interrupt [r _req {:keys [status message]}]
+  (cond-> r message (toast (if (= :ok status) :info :error) message)))
 
 (defmethod on-reply :save [r {:keys [path text then] sent-version :version}
                            {:keys [status version message]}]
@@ -368,7 +492,11 @@
     Nothing runs while a question is open.
   - `[:palette-close]` closes the palette, as on a click outside it. The palette never
     closes itself: the page refuses its own close and its own pick, so the state alone
-    decides whether it is open."
+    decides whether it is open.
+  - `[:interrupt id]` interrupts the evaluation of the results entry `id`.
+  - `[:unfold id]` shows the results entry `id` in full, or folds it again.
+  - `[:jump-to id]` goes to the code of the results entry `id`: to its line, if it has one,
+    when its file is open, or else it opens the file."
   (fn [_r event] (first event)))
 
 (defmethod step :connected [r _]
@@ -376,7 +504,13 @@
 
 (defmethod step :disconnected [r _]
   (-> r
-      (change assoc :conn :closed :pending {})
+      ;; no reply comes any more, so no entry may stay running
+      (change (fn [s] (-> s
+                          (assoc :conn :closed :pending {})
+                          (update :results (fn [rs] (mapv #(cond-> % (= :running (:status %))
+                                                             (assoc :status :unavailable
+                                                                    :message "Disconnected before the reply came."))
+                                                          rs))))))
       (toast :error "Disconnected from bare-edit. Restart it to keep editing.")))
 
 (defmethod step :focus [r _]
@@ -388,7 +522,11 @@
       :reply (if-let [req (get-in r [:state :pending (:id msg)])]
                (-> r (change update :pending dissoc (:id msg)) (on-reply req msg))
                r)
-      :event (cond-> r (= :out (:event msg)) (toast :info (:text msg)))
+      :event (cond-> r
+               (= :out (:event msg)) (change (fn [s] (-> s
+                                                         (update :next-id inc)
+                                                         (add-entry {:id (:next-id s) :kind :out :out (:text msg)})
+                                                         show-results))))
       r)))
 
 (defn- add-buffer
@@ -489,3 +627,18 @@
 
 (defmethod step :palette-close [{s :state :as r} _]
   (if (:palette s) (close-palette r) r))
+
+(defmethod step :interrupt [r [_ id]]
+  (interrupt r id))
+
+(defmethod step :unfold [r [_ id]]
+  (change r update :unfolded #(if (% id) (disj % id) (conj % id))))
+
+(defmethod step :jump-to [{s :state :as r} [_ id]]
+  (let [{:keys [path line]} (some #(when (= id (:id %)) %) (:results s))
+        open-id             (first (buffer-ids-for s path))]
+    (cond
+      (nil? path) r
+      open-id     (cond-> (change r assoc :active open-id)
+                    line (update :fx conj [:goto line]))
+      :else       (step r [:open-file path]))))

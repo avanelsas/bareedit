@@ -1,5 +1,5 @@
 (ns bare-edit.model-test
-  "Tests the file tree and the rule for files changed on disk."
+  "Tests the file tree, the rule for files changed on disk, and reading the code of a file."
   (:require [bare-edit.model :as model]
             [clojure.test :refer [deftest is are]]))
 
@@ -73,3 +73,16 @@
     "src/demo/core.clj" "src/demo/"
     "README.md"         ""
     nil                 ""))
+
+(deftest namespaces-of-files
+  (are [text want] (= want (model/ns-of text))
+    "(ns a.core\n  (:require [b]))" "a.core"
+    "(ns ^:no-doc a.b)"             "a.b"
+    ";; a comment\n(ns a)"         "a"
+    "(defn f [])"                   nil
+    ""                              nil))
+
+(deftest form-heads
+  (is (= "(defn f [x]" (model/form-head "(defn f [x]\n  x)" 50)))
+  (is (= "(abc…" (model/form-head "(abcdef)" 4)))
+  (is (= "" (model/form-head nil 10))))

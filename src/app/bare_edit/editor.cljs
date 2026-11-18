@@ -11,10 +11,12 @@
             ["@codemirror/search" :refer [openSearchPanel search searchKeymap]]
             ["@codemirror/state" :refer [EditorState]]
             ["@codemirror/view" :refer [EditorView keymap]]
-            ["@lezer/highlight" :refer [tags]]
+            ["@lezer/highlight" :refer [highlightTree tags]]
+            [clojure.string :as str]
             [nextjournal.clojure-mode :as cm-clj]
             [nextjournal.clojure-mode.commands :as commands]
             [nextjournal.clojure-mode.extensions.close-brackets :as close-brackets]
+            [nextjournal.clojure-mode.extensions.eval-region :as eval-region]
             [nextjournal.clojure-mode.extensions.formatting :as formatting]
             [nextjournal.clojure-mode.extensions.selection-history :as sel-history]))
 
@@ -65,11 +67,12 @@
                     ".cm-searchMatch.cm-searchMatch-selected"
                     {:backgroundColor "color-mix(in srgb, var(--x-color-warning) 60%, transparent)"}})))
 
-(def highlighting
-  "Syntax colours from BareDOM's colour tokens."
-  (syntaxHighlighting
-   (.define HighlightStyle
-            (clj->js [{:tag (.-keyword tags) :color "var(--x-color-primary)"}
+(def highlight-style
+  "Syntax colours from BareDOM's colour tokens, as a CodeMirror `HighlightStyle`.
+  The editor uses it through [[highlighting]], and [[highlighted]] uses it for text that
+  is not in the editor. Its CSS classes are added to the page when the editor mounts."
+  (.define HighlightStyle
+           (clj->js [{:tag (.-keyword tags) :color "var(--x-color-primary)"}
                       {:tag (.-atom tags) :color "var(--x-color-primary)"}
                       {:tag (.-string tags) :color "var(--x-color-success)"}
                       {:tag (.-regexp tags) :color "var(--x-color-success)"}
@@ -80,7 +83,30 @@
                       {:tag (.-lineComment tags) :color "var(--x-color-text-muted)" :fontStyle "italic"}
                       {:tag (.-definitionKeyword tags) :color "var(--x-color-secondary)"}
                       {:tag (.-macroName tags) :color "var(--x-color-secondary)"}
-                      {:tag (.-meta tags) :color "var(--x-color-text-muted)"}]))))
+                      {:tag (.-meta tags) :color "var(--x-color-text-muted)"}])))
+
+(def highlighting
+  "The editor extension that colours the syntax with [[highlight-style]]."
+  (syntaxHighlighting highlight-style))
+
+(def ^:private clojure-parser
+  "The parser of clojure-mode, with the style tags that [[highlight-style]] colours."
+  (.-parser ^js (cm-clj/syntax)))
+
+(defn highlighted
+  "The pieces of the Clojure text `text`, as `[piece class]` pairs that join to `text`.
+  `class` is the CSS class of [[highlight-style]] for the piece, or `nil` for plain text."
+  [text]
+  (let [pieces #js []
+        pos    (volatile! 0)
+        plain  (fn [to] (when (< @pos to) (.push pieces [(subs text @pos to) nil])))]
+    (highlightTree (.parse clojure-parser text) highlight-style
+                   (fn [from to cls]
+                     (plain from)
+                     (.push pieces [(subs text from to) cls])
+                     (vreset! pos to)))
+    (plain (count text))
+    (vec pieces)))
 
 (def ^:private command-keys
   "Keys that CodeMirror's keymaps bind but the editor's commands own.
@@ -158,6 +184,38 @@
   "The text of `editor-state`, as a string."
   [^js editor-state]
   (.toString (.-doc editor-state)))
+
+(defn- form-between
+  "The text of `state` from `from` to `to`, as `{:code :line}` with the line it starts on.
+  Returns `nil` when the text is blank."
+  [^js state from to]
+  (let [code (.sliceDoc state from to)]
+    (when-not (str/blank? code)
+      {:code code :line (.-number (.lineAt (.-doc state) from))})))
+
+(defn form-at
+  "The form at the cursor in `state`, as `{:code :line}`, or `nil` when there is none.
+  It is the selection when there is one. Otherwise it is the form that ends at the cursor,
+  or else the innermost form around it, as clojure-mode decides."
+  [^js state]
+  (when-let [^js r (eval-region/cursor-range state)]
+    (form-between state (.-from r) (.-to r))))
+
+(defn top-level-form-at
+  "The top-level form at the cursor in `state`, as `{:code :line}`, or `nil` between forms."
+  [^js state]
+  (when-let [^js node (eval-region/top-level-node state)]
+    (form-between state (.-from node) (.-to node))))
+
+(defn symbol-at
+  "The symbol at the cursor in `state`, or just before it, as a string, or `nil`."
+  [^js state]
+  (let [pos (.. state -selection -main -head)]
+    (some (fn [side]
+            (let [^js node (.resolveInner (syntaxTree state) pos side)]
+              (when (= "Symbol" (.-name node))
+                (.sliceDoc state (.-from node) (.-to node)))))
+          [-1 1])))
 
 (defn- changed-range
   "The part of the string `old` that differs from the string `new`.

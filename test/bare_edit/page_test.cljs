@@ -53,7 +53,7 @@
     (let [events (atom [])
           h      (render (steps/ask state {:kind :close :buffer 1}) events)]
       (is (re-find #"Save a\.clj\?" (text (elements h :x-modal))))
-      (doseq [b (elements h :x-button)] ((:on-click (second b)) nil))
+      (doseq [b (elements (elements h :x-modal) :x-button)] ((:on-click (second b)) nil))
       (is (= [[:answer :cancel] [:answer :discard] [:answer :save]] @events))))
   (testing "only the first question shows"
     (let [s (-> state
@@ -61,7 +61,7 @@
                 (steps/ask {:kind :close :buffer 1}))
           h (render s (atom []))]
       (is (= 1 (count (elements h :x-modal))))
-      (is (= ["Take disk" "Keep mine"] (map text (elements h :x-button)))))))
+      (is (= ["Take disk" "Keep mine"] (map text (elements (elements h :x-modal) :x-button)))))))
 
 (defn- fake-event
   "A DOM event stand-in with `detail`, which records a call to `preventDefault` in `prevented`."
@@ -82,3 +82,65 @@
       ((:on-x-command-palette-close-request (second el)) (fake-event {} prevented))
       (is @prevented)
       (is (= [[:palette-close]] @events)))))
+
+(defn- click
+  "Calls the `:on-click` of the element `el`, a hiccup vector."
+  [el]
+  ((:on-click (second el)) nil))
+
+(deftest result-entries
+  (let [events (atom [])
+        entry  {:id 7 :kind :eval :path "src/a.clj" :line 3 :form "(+ 1 2)" :status :ok :out "hi\n" :value "3"}
+        h      (page/entry-view entry false #(swap! events conj %))]
+    (testing "the header names the file, the line and the form"
+      (is (= "src/a.clj" (:path entry)))
+      (is (re-find #"a\.clj:3  \(\+ 1 2\)" (text h))))
+    (testing "the output comes before the value"
+      (is (re-find #"hi\n.*3" (text h))))
+    (testing "a click on the header jumps to the code"
+      (click (first (filter #(= "entry-head jumps" (:class (second %))) (elements h :div))))
+      (is (= [[:jump-to 7]] @events))))
+  (testing "a running entry has an interrupt button"
+    (let [events (atom [])
+          h      (page/entry-view {:id 7 :kind :eval :path "a.clj" :line 1 :form "x" :status :running}
+                                  false #(swap! events conj %))]
+      (click (first (elements h :x-button)))
+      (is (= [[:interrupt 7]] @events))))
+  (testing "an entry that failed shows its message"
+    (is (re-find #"boom" (text (page/entry-view {:id 1 :kind :eval :path "a.clj" :line 1 :form "x"
+                                                 :status :error :message "boom"} false identity)))))
+  (testing "docs show the name, the arglists and the doc"
+    (is (re-find #"clojure.core/map.*\[f coll\].*Returns"
+                 (text (page/entry-view {:id 1 :kind :doc :sym "map" :status :ok
+                                          :info {:ns "clojure.core" :name "map" :arglists-str "([f coll])"
+                                                 :doc "Returns a lazy sequence."}}
+                                         false identity))))))
+
+(deftest folding-long-results
+  (let [long-value (apply str (interpose "\n" (range 20)))]
+    (is (= [(apply str (interpose "\n" (range page/fold-lines))) true] (page/folded long-value false)))
+    (is (= [long-value false] (page/folded long-value true)))
+    (is (= ["1" false] (page/folded "1" false)))
+    (testing "a folded entry has a button that shows it all"
+      (let [events (atom [])
+            h      (page/entry-view {:id 4 :kind :eval :path "a.clj" :line 1 :form "x" :status :ok
+                                     :value long-value}
+                                    false #(swap! events conj %))]
+        (click (last (elements h :x-button)))
+        (is (= [[:unfold 4]] @events))))
+    (testing "an unfolded entry shows it all, with a button that folds it again"
+      (let [h (page/entry-view {:id 4 :kind :eval :path "a.clj" :line 1 :form "x" :status :ok
+                                :value long-value}
+                               true identity)]
+        (is (re-find #"19" (text h)))
+        (is (= "Show less" (text (last (elements h :x-button)))))))))
+
+(deftest the-results-column
+  (testing "it shows when open, and takes no room when closed"
+    (let [open-h   (render (steps/add-entry state {:id 1 :kind :out :out "x"}) (atom []))
+          closed-h (render (assoc state :results-open? false) (atom []))]
+      (is (seq (elements open-h :x-button)))
+      (is (= "100" (some #(when (= "inner closed" (:class (second %))) (:position (second %)))
+                         (elements closed-h :x-split-pane))))
+      (testing "and the editor stays on the page either way"
+        (is (= "" (editor-style closed-h)))))))

@@ -105,3 +105,15 @@
   "The last segment of `path`, the file's name."
   [path]
   (last (str/split path #"/")))
+
+(defn ns-of
+  "The namespace named by the `ns` form in the Clojure source `text`, or `nil`.
+  Metadata before the name, such as `^:no-doc`, is skipped."
+  [text]
+  (second (re-find #"\(\s*ns\s+(?:\^\S+\s+)*([^\s()\[\]{}\"^;]+)" text)))
+
+(defn form-head
+  "The start of the code `code`, for a one-line heading: its first line, cut at `n` characters."
+  [code n]
+  (let [line (str/trim (first (str/split-lines (str code))))]
+    (if (> (count line) n) (str (subs line 0 n) "…") line)))
