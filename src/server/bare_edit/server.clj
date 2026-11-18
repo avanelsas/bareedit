@@ -4,8 +4,10 @@
   A WebSocket is accepted only from the editor's own page and with the startup token, and
   no path in a request may lead outside the project."
   (:require [bare-edit.files :as files]
+            [bare-edit.nrepl :as nrepl]
             [bare-edit.paths :as paths]
             [bare-edit.protocol :as p]
+            [bare-edit.repl :as repl]
             [babashka.fs :as fs]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -45,12 +47,68 @@
         (p/failure id :conflict (str path " changed on disk since it was loaded."
                                      (when (= :absent conflict) " It no longer exists.")))))))
 
+;; ── The REPL ───────────────────────────────────────────────────────────────
+;; A REPL operation answers later, through the connection's `:reply!`, so its method
+;; returns nil. Each request in flight is known by its channel and id, because an id is
+;; unique only within one page, and each channel has its own nREPL session.
+
+(defn- repl-request!
+  "Sends `msg` to the REPL for the request `id` from the connection in `ctx`.
+  The reply is `(->reply msgs)` when the REPL is done, as `->reply` folds the nREPL
+  messages. A failure replies with the status and message of [[repl/failure-reply]].
+  Returns `nil`, since the reply comes later."
+  [{:keys [repl reply! channel]} id msg ->reply]
+  (nrepl/request! repl channel id msg
+                  (fn [{:keys [msgs failure] :as result}]
+                    (reply! (if failure
+                              (apply p/failure id (repl/failure-reply result))
+                              (assoc (->reply msgs) :id id)))))
+  nil)
+
+(defn- clojure-only
+  "The reply refusing the request `id` for `path`, or `nil` when `path` is Clojure code.
+  ClojureScript has no session yet, and other files are not code."
+  [id path]
+  (case (repl/session-for path)
+    :clj  nil
+    :cljs (p/failure id :unavailable "ClojureScript evaluation is not available yet.")
+    (p/failure id :error (str path " is not a Clojure file."))))
+
+(defmethod handle :eval [ctx {:keys [id path] :as req}]
+  (or (when (outside (:root ctx) [path]) (p/failure id :error (str "Not a file in this project: " path)))
+      (clojure-only id path)
+      (repl-request! ctx id (repl/eval-message req) repl/fold-eval)))
+
+(defmethod handle :load-file [ctx {:keys [id path] :as req}]
+  (or (when (outside (:root ctx) [path]) (p/failure id :error (str "Not a file in this project: " path)))
+      (clojure-only id path)
+      (repl-request! ctx id (repl/load-file-message req) repl/fold-eval)))
+
+(defmethod handle :completions [ctx {:keys [id prefix ns]}]
+  ;; the browser asks only for .clj and .cljc files; a .cljs file completes from its words
+  (repl-request! ctx id {"op" "completions" "prefix" prefix "ns" (or ns "user")} repl/fold-completions))
+
+(defmethod handle :lookup [ctx {:keys [id path sym ns]}]
+  (or (when (= :cljs (repl/session-for path))
+        (p/failure id :unavailable "Docs are available for Clojure only."))
+      (repl-request! ctx id {"op" "lookup" "sym" sym "ns" (or ns "user")} repl/fold-lookup)))
+
+(defmethod handle :interrupt [{:keys [repl reply! channel]} {:keys [id] eval-id :eval}]
+  ;; an evaluation that already finished is not in flight, and nothing happens
+  (when-not (nrepl/interrupt! repl channel eval-id
+                              (fn [{:keys [msgs failure] :as result}]
+                                (reply! (if failure
+                                          (apply p/failure id (repl/failure-reply result))
+                                          (assoc (repl/fold-interrupt msgs (repl/interrupt-warning result))
+                                                 :id id)))))
+    (p/reply id :ok)))
+
 (defn respond
-  "The reply to `text`, one incoming frame, or `nil` when there is nothing to answer.
+  "The reply to `text`, one incoming frame, or `nil` when there is nothing to answer now.
   Text that is not EDN, or a message that is not a map with an integer `:id`, has nothing
-  to answer. A malformed
-  request is answered `:error` with its problems. So is an operation that throws, so no
-  request waits forever. `ctx` is passed on to [[handle]]."
+  to answer. A malformed request is answered `:error` with its problems. So is an operation
+  that throws, so no request waits forever. A REPL operation answers later, through
+  `:reply!` in `ctx`. `ctx` is passed on to [[handle]]."
   [ctx text]
   (let [msg (p/decode text)]
     (when (and (map? msg) (int? (:id msg)))
@@ -109,14 +167,18 @@
        :body (io/input-stream res)})))
 
 (defn- ws-handler
-  "Accepts the WebSocket request `req` when [[allowed?]] by `ctx`, and answers each frame."
+  "Accepts the WebSocket request `req` when [[allowed?]] by `ctx`, and answers each frame.
+  Each frame is handled with the channel and a `:reply!` for it in the context. When the
+  connection closes, its evaluations in flight are dropped without being stopped."
   [ctx req]
   (if-not (allowed? ctx req)
     {:status 403 :body "Forbidden"}
     (hk/as-channel req
       {:on-receive (fn [ch text]
-                     (when-let [r (respond ctx text)]
-                       (hk/send! ch (p/encode r))))})))
+                     (let [reply! #(hk/send! ch (p/encode %))]
+                       (some-> (respond (assoc ctx :channel ch :reply! reply!) text) reply!)))
+       :on-close   (fn [ch _status]
+                     (nrepl/forget-channel! (:repl ctx) ch))})))
 
 (defn- app
   "The Ring handler for the server, which serves the WebSocket and the page's files.
@@ -134,13 +196,16 @@
 (defn start!
   "Starts the server for the project at `:root` in `opts`, on `127.0.0.1` and a free port.
   Returns the context as a value: `opts` with the canonical `:root`, and `:port`,
-  `:token`, `:url`, and `:stop`, a function that stops the server."
+  `:token`, `:repl`, the client for the project's nREPL, `:url`, and `:stop`, a function
+  that stops the server and closes the REPL connection."
   [{:keys [root] :as opts}]
   (let [ctx    (promise)
         server (hk/run-server (app ctx) {:ip "127.0.0.1" :port 0 :legacy-return-value? false})
         port   (hk/server-port server)
-        token  (new-token)]
-    (deliver ctx (assoc opts :root (str (fs/canonicalize root)) :port port :token token))
+        token  (new-token)
+        root   (str (fs/canonicalize root))
+        client (nrepl/client root)]
+    (deliver ctx (assoc opts :root root :port port :token token :repl client))
     (assoc @ctx
            :url (str "http://127.0.0.1:" port "/?token=" token)
-           :stop #(hk/server-stop! server))))
+           :stop #(do (hk/server-stop! server) (nrepl/close! client)))))
