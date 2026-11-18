@@ -25,8 +25,11 @@
   palette, `{:kind :query}` with `:kind` `:files` or `:commands`, or `nil`. `:results`
   holds the entries of the results column, newest first, see [[add-entry]].
   `:results-open?` says whether the column shows, and `:unfolded` holds the ids of the
-  entries shown in full. `:conn` is `:connecting`, `:open` or `:closed`."
+  entries shown in full. `:conn` is `:connecting`, `:open` or `:closed`. `:config` is the
+  user's look and feel, `{:preset :font-mono :font-size}` from the server, or `nil` until
+  it arrives."
   {:conn :connecting
+   :config nil
    :next-id 1
    :next-buffer 1
    :pending {}
@@ -415,18 +418,24 @@
 (defmulti on-reply
   "Returns the result `r` after `reply`, which answers the request `req`.
   It is dispatched on the request's `:op`. `:paths` stores the path list. `:read` gives
-  each open buffer of a file its disk value; when it fails, the tabs still loading close. `:save` records the sent text as the disk
-  text and runs the request's `:then` (`[:close-tab id]` closes the tab, asking again if it
-  has unsaved changes by then), and a save that created the file asks for the path list
-  again. It reads the file again on `:conflict`. An `:eval`, `:load-file` or `:lookup`
-  reply fills in its results entry, whatever its status. A `:completions` reply answers
-  the editor's request with the candidates, or with `nil` when it is not `:ok`. An `:interrupt` reply shows its
-  message, if any, as a toast. Any other reply that is not `:ok` shows its message as a
-  toast."
+  each open buffer of a file its disk value; when it fails, the tabs still loading close.
+  `:save` records the sent text as the disk text and runs the request's `:then`
+  (`[:close-tab id]` closes the tab, asking again if it has unsaved changes by then), and a
+  save that created the file asks for the path list again. It reads the file again on
+  `:conflict`. An `:eval`, `:load-file` or `:lookup` reply fills in its results entry,
+  whatever its status. A `:completions` reply answers the editor's request with the
+  candidates, or with `nil` when it is not `:ok`. A `:config` reply stores the look and
+  feel and shows each problem as a warning toast. An `:interrupt` reply shows its message,
+  if any, as a toast. Any other reply that is not `:ok` shows its message as a toast."
   (fn [_r req _reply] (:op req)))
 
 (defmethod on-reply :default [r _req {:keys [status message]}]
   (cond-> r (not= :ok status) (toast :error message)))
+
+(defmethod on-reply :config [r _req {:keys [status config problems message]}]
+  (if (= :ok status)
+    (reduce #(toast %1 :warning %2) (change r assoc :config config) problems)
+    (toast r :error message)))
 
 (defmethod on-reply :paths [r _req {:keys [status paths message]}]
   (if (= :ok status)
@@ -511,8 +520,10 @@
     when its file is open, or else it opens the file."
   (fn [_r event] (first event)))
 
-(defmethod step :connected [r _]
-  (-> r (change assoc :conn :open) refresh))
+(defmethod step :connected [{s :state :as r} _]
+  ;; the look and feel is asked for until it arrives, so its problems show once
+  (cond-> (-> r (change assoc :conn :open) refresh)
+    (nil? (:config s)) (send :config {})))
 
 (defmethod step :disconnected [{s :state :as r} _]
   (-> r

@@ -144,3 +144,17 @@
                          (elements closed-h :x-split-pane))))
       (testing "and the editor stays on the page either way"
         (is (= "" (editor-style closed-h)))))))
+
+(deftest the-look-and-feel
+  (testing "the x-theme picks its own preset until the look and feel arrives"
+    (is (nil? (:preset (second (render state (atom [])))))))
+  (let [h (render (assoc state :config {:preset "ocean" :font-mono "Menlo, monospace" :font-size 14}) (atom []))]
+    (testing "then it is the user's"
+      (is (= "ocean" (:preset (second h)))))
+    (testing "the fonts go on the editor and the results column only"
+      (is (= "--x-font-family-mono:Menlo, monospace;--x-font-size-base:14px;" (editor-style h)))
+      (is (= (editor-style h) (some #(when (= "results-pane" (:class (second %))) (:style (second %)))
+                                    (elements h :div))))
+      (is (nil? (:style (second h)))))
+    (testing "a font the file does not name is not set"
+      (is (= "--x-font-size-base:12px;" (page/font-style {:font-size 12}))))))

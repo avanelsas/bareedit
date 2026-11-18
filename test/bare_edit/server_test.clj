@@ -13,7 +13,8 @@
 
 (use-fixtures :each
   (fn [t]
-    (let [srv (server/start! {:root (str (fs/create-temp-dir))})]
+    (let [srv (server/start! {:root        (str (fs/create-temp-dir))
+                              :config-file (str (fs/path (fs/create-temp-dir) "config.edn"))})]
       (try (binding [*srv* srv] (t))
            (finally ((:stop srv)))))))
 
@@ -45,9 +46,13 @@
 
 (deftest requests-get-replies
   (let [c (connect *srv*)]
-    (testing "a known operation that is not built yet"
-      (is (= {:id 1 :status :unavailable :message "Operation :config is not available yet."}
-             (ask c (p/request :config 1 {})))))
+    (testing "the look and feel: the defaults with no file, then the file's"
+      (is (= {:id 1 :status :ok :config {:preset "default"} :problems []}
+             (ask c (p/request :config 1 {}))))
+      (spit (:config-file *srv*) "{:theme {:preset \"ocean\" :font-size \"big\"}}")
+      (let [r (ask c (p/request :config 1 {}))]
+        (is (= {:preset "ocean"} (:config r)))
+        (is (re-find #"Ignored :font-size" (first (:problems r))))))
     (testing "a malformed request with an id gets an :error reply"
       (let [r (ask c {:op :save :id 2 :path "a.clj"})]
         (is (= :error (:status r)))
@@ -76,3 +81,7 @@
     (is (thrown? Exception (connect (assoc *srv* :token "nope")))))
   (testing "wrong origin, such as localhost, which is a different origin"
     (is (thrown? Exception (connect (assoc *srv* :origin (str "http://localhost:" (:port *srv*))))))))
+
+(deftest an-operation-without-a-method
+  (is (= {:id 1 :status :unavailable :message "Operation :nothing is not available yet."}
+         (server/handle {} {:op :nothing :id 1}))))

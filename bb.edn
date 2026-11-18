@@ -8,7 +8,7 @@
          :requires ([clojure.test :as t])
          :task (let [nss '[bare-edit.protocol-test bare-edit.paths-test bare-edit.files-test bare-edit.server-test
                            bare-edit.docstrings-test bare-edit.repl-test bare-edit.nrepl-test
-                           bare-edit.shadow-test]]
+                           bare-edit.shadow-test bare-edit.config-test]]
                  (apply require nss)
                  (let [{:keys [fail error]} (apply t/run-tests nss)]
                    (System/exit (if (zero? (+ fail error)) 0 1))))}

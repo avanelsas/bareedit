@@ -210,14 +210,25 @@
             (reset! last-result [paths v])
             v))))))
 
+(defn font-style
+  "The inline style that gives an element the fonts of the look and feel `config`.
+  It sets `--x-font-family-mono` and `--x-font-size-base`, in pixels, only for the ones
+  `config` names, and is empty otherwise. It goes on the editor and the results column,
+  not on the `x-theme`, because `--x-font-size-base` sizes the whole UI."
+  [{:keys [font-mono font-size]}]
+  (str (when font-mono (str "--x-font-family-mono:" font-mono ";"))
+       (when font-size (str "--x-font-size-base:" font-size "px;"))))
+
 (defn page
   "The page, as hiccup, for the state `s`, whose controls call `dispatch` with events.
   It reads the `:paths`, `:expanded`, `:tabs`, `:buffers`, `:active`, `:conn`,
-  `:questions`, `:palette`, `:results` and `:results-open?` of `s`. The results column is
-  always on the page, so the editor never moves; when closed, its pane takes no room."
-  [{:keys [tabs buffers active paths expanded conn results-open?] :as s} dispatch]
-  (let [active-b (get buffers active)]
-    [:x-theme {:preset "default" :class "app"}
+  `:questions`, `:palette`, `:results`, `:results-open?` and `:config` of `s`. Until the
+  look and feel arrives, the `x-theme` uses its own preset. The results column is always
+  on the page, so the editor never moves; when closed, its pane takes no room."
+  [{:keys [tabs buffers active paths expanded conn results-open? config] :as s} dispatch]
+  (let [active-b (get buffers active)
+        fonts    (font-style config)]
+    [:x-theme {:preset (:preset config) :class "app"}
      [:x-split-pane {:position "22" :class "panes"}
       [:div {:slot "start" :class "files"}
        [:x-tree {:label "Files" :selection "leaf" :guides true
@@ -238,8 +249,8 @@
             [:x-tab {:value (str id) :variant "underline" :size "sm"} (tab-label (get buffers id))])]
          [:div {:class "empty"} (if (= conn :closed) "Disconnected. Restart bare-edit." "Open a file from the tree.")])
        ;; hidden while the active file loads, so nothing typed lands in the previous file's text
-       [:div {:id "editor" :data-keep true :style (if (:state active-b) "" "display:none")}]]
-      [:div {:slot "end" :class "results-pane"} (when results-open? (results-view s dispatch))]]]
+       [:div {:id "editor" :data-keep true :style (str fonts (when-not (:state active-b) "display:none"))}]]
+      [:div {:slot "end" :class "results-pane" :style fonts} (when results-open? (results-view s dispatch))]]]
      ;; render matches children by position, so each overlay has a fixed slot and one
      ;; appearing never moves another; the toaster keeps its toasts (:data-keep)
      [:x-toaster {:id "toaster" :data-keep true}]

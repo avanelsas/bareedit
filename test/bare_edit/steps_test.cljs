@@ -36,8 +36,24 @@
 (deftest connecting-refreshes
   (let [r (run (assoc steps/initial-state :buffers {1 {:id 1 :path "src/a.clj" :disk-text ""}})
                [:connected])]
-    (is (= [[:send {:op :paths :id 1}] [:send {:op :read :id 2 :paths ["src/a.clj"]}]] (:fx r)))
-    (is (= #{1 2} (set (keys (get-in r [:state :pending])))))))
+    (is (= [[:send {:op :paths :id 1}] [:send {:op :read :id 2 :paths ["src/a.clj"]}]
+            [:send {:op :config :id 3}]]
+           (:fx r)))
+    (is (= #{1 2 3} (set (keys (get-in r [:state :pending])))))))
+
+(deftest the-look-and-feel
+  (let [r (run steps/initial-state [:connected])
+        s (:state r)]
+    (testing "it is asked for on connecting, until it arrives"
+      (is (some #{[:send {:op :config :id 2}]} (:fx r))))
+    (let [r2 (run s (reply-to (update r :fx #(filterv (fn [[_ req]] (= :config (:op req))) %))
+                              :ok {:config {:preset "ocean" :font-size 14} :problems ["one" "two"]}))]
+      (testing "the reply is stored, and each problem is a warning toast"
+        (is (= {:preset "ocean" :font-size 14} (get-in r2 [:state :config])))
+        (is (= [[:toast :warning "one"] [:toast :warning "two"]] (:fx r2))))
+      (testing "connecting again does not ask again"
+        (let [r3 (run (:state r2) [:disconnected] [:connected])]
+          (is (not-any? #(= :config (:op (second %))) (:fx r3))))))))
 
 (deftest opening-a-file
   (testing "a new buffer is loading and a :read is sent"

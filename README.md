@@ -54,6 +54,22 @@ npx shadow-cljs watch app
 - **Completion and docs.** In `.cljs` files, completion offers the words of the open file, and docs are not available.
 - **Clojure.** Without a `.nrepl-port`, Clojure evaluations use shadow-cljs's own JVM.
 
+## Look and feel
+
+The look comes from one file for every project, `~/.config/bare-edit/config.edn`:
+
+```clojure
+{:theme {:preset    "ocean"                              ; a BareDOM preset
+         :font-mono "JetBrains Mono, Menlo, monospace"   ; optional
+         :font-size 14}}                                 ; optional, in pixels
+```
+
+- **Preset.** One of BareDOM's presets: `default`, `ocean`, `forest`, `sunset`, `neo-brutalist`, `aurora`, `mono-ai` or `warm-mineral`. Each has light and dark colours, and the system setting picks between them.
+- **Fonts.** `:font-mono` and `:font-size` set the editor and the results column. The rest of the page keeps the preset's fonts.
+- **Defaults.** Without the file, or without a key, the preset is `default` and the fonts are the preset's.
+- **Mistakes.** A value that is wrong, or a key that is unknown, is ignored, and a warning says so when the page loads.
+- **Changes.** After editing the file, reload the page (`Mod-r`). There is no need to restart the editor.
+
 ## Development
 
 | Task | Command |
