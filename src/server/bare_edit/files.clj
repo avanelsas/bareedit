@@ -1,5 +1,5 @@
 (ns bare-edit.files
-  "Files on disk: the path list, reading, and compare-and-set saving.
+  "Files on disk: the path list, reading, and compare-and-set saving and renaming.
   A file's version is the SHA-256 of its bytes, or `:absent` when it does not exist. A save
   states the version it expects, so it never overwrites a change made outside the editor."
   (:require [bare-edit.paths :as paths]
@@ -118,3 +118,44 @@
                (fs/move tmp file {:replace-existing true :atomic-move true})
                (finally (fs/delete-if-exists tmp)))
           {:version (version-of-bytes bs)})))))
+
+(defn- move-to-another-case!
+  "Moves the file `src` to `dst`, the same file with its name in another case.
+  A move onto the same file does nothing, so it goes through a temporary name next to it.
+  When the second step fails, the file is moved back to `src` and the failure is thrown, so
+  the file never stays under the temporary name."
+  [src dst]
+  (let [tmp (fs/path (fs/parent src) (str ".bare-edit-" (random-uuid) ".tmp"))]
+    (fs/move src tmp)
+    (try (fs/move tmp dst)
+         (catch Exception e
+           (fs/move tmp src)
+           (throw e)))))
+
+(defn rename!
+  "Moves the file at `from` to `to`, both under `root`, when it still has the version `expected`.
+  Returns `{:version v}`, the unchanged version, or `{:conflict current}` when the file
+  changed on disk or is gone, or `{:exists true}` when another file is at `to` already, so
+  a rename never overwrites. On a file system that ignores case, `to` may be `from` in
+  another case, which is the same file, see [[move-to-another-case!]]. Missing folders of
+  `to` are created. It holds the save lock, so a save of the same file waits for it."
+  [root from to expected]
+  (locking save-lock
+    (let [src     (paths/resolve-in root from)
+          ;; the folder is resolved, but the name stays as typed: resolving it would give
+          ;; back the case of a file that is already there
+          dst     (fs/path (fs/parent (paths/resolve-in root to)) (fs/file-name to))
+          current (version src)]
+      (cond
+        (not= current expected)
+        {:conflict current}
+
+        (and (fs/exists? dst) (not (fs/same-file? src dst)))
+        {:exists true}
+
+        :else
+        (do (fs/create-dirs (fs/parent dst))
+            (if (fs/exists? dst)
+              (move-to-another-case! src dst)
+              (fs/move src dst))
+            {:version current})))))

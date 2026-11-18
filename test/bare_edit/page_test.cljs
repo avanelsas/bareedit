@@ -185,3 +185,16 @@
     (testing "the button opens the command palette"
       (click (first (elements bar :x-button)))
       (is (= [[:command (steps/command-by-name "command-palette")]] @events)))))
+
+(deftest the-rename-dialog
+  (let [events (atom [])
+        h      (render (steps/ask state {:kind :rename :buffer 1 :path "src/b.clj"}) events)
+        modal  (elements h :x-modal)]
+    (testing "it names the file, and says why a path cannot be used"
+      (is (re-find #"Rename a\.clj" (text modal)))
+      (is (= "A file with that path exists." (:error (second (first (elements modal :x-form-field)))))))
+    (testing "its button is off while there is a problem"
+      (is (:disabled (second (last (elements modal :x-button))))))
+    (testing "typing goes to the question"
+      ((:on-x-form-field-input (second (first (elements modal :x-form-field)))) #js {:detail #js {:value "src/c.clj"}})
+      (is (= [[:question-path "src/c.clj"]] @events)))))

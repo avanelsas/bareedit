@@ -14,11 +14,30 @@
   [variant label on-click]
   [:x-button {:variant variant :on-click on-click} label])
 
+(defn- path-dialog
+  "The dialog that asks for a path, titled `title`, whose button `label` answers `choice`.
+  It shows the path of `question` and its `problem`, if any, and disables the button while
+  there is one. Typing calls `dispatch` with `[:question-path text]`, and Enter answers
+  like the button."
+  [title label choice {:keys [path]} problem dispatch]
+  (let [answer (fn [choice] (fn [_] (dispatch [:answer choice])))]
+    [:x-modal {:open true :label title :size "sm" :on-x-modal-dismiss (answer :cancel)}
+     [:div {:slot "header"} title]
+     [:x-form-field {:label "Path in the project" :value path :error (or problem "")
+                     :on-x-form-field-input (fn [^js e] (dispatch [:question-path (.. e -detail -value)]))
+                     :on-keydown (fn [^js e]
+                                   (when (= "Enter" (.-key e))
+                                     (.preventDefault e)
+                                     (dispatch [:answer choice])))}]
+     [:div {:slot "footer" :class "actions"}
+      (button "secondary" "Cancel" (answer :cancel))
+      [:x-button {:variant "primary" :disabled (boolean problem) :on-click (answer choice)} label]]]))
+
 (defn question-view
   "The dialog for the first open question in the state `s`, or `nil` when there is none.
   Each button calls `dispatch` with `[:answer choice]`; see [[bare-edit.steps/ask]]."
   [s dispatch]
-  (let [{:keys [kind buffer path]} (first (:questions s))
+  (let [{:keys [kind buffer] :as question} (first (:questions s))
         file   (model/file-name (get-in s [:buffers buffer :path] ""))
         answer (fn [choice] (fn [_] (dispatch [:answer choice])))]
     (case kind
@@ -42,19 +61,10 @@
         (button "primary" "Save" (answer :save))]]
 
       :new-file
-      (let [problem (model/path-problem path)]
-        [:x-modal {:open true :label "New file" :size "sm"
-                   :on-x-modal-dismiss (answer :cancel)}
-         [:div {:slot "header"} "New file"]
-         [:x-form-field {:label "Path in the project" :value path :error (or problem "")
-                         :on-x-form-field-input (fn [^js e] (dispatch [:new-file-path (.. e -detail -value)]))
-                         :on-keydown (fn [^js e]
-                                       (when (= "Enter" (.-key e))
-                                         (.preventDefault e)
-                                         (dispatch [:answer :create])))}]
-         [:div {:slot "footer" :class "actions"}
-          (button "secondary" "Cancel" (answer :cancel))
-          [:x-button {:variant "primary" :disabled (boolean problem) :on-click (answer :create)} "Create"]]])
+      (path-dialog "New file" "Create" :create question (steps/question-problem s question) dispatch)
+
+      :rename
+      (path-dialog (str "Rename " file) "Rename" :rename question (steps/question-problem s question) dispatch)
 
       nil)))
 

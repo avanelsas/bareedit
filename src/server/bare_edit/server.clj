@@ -35,6 +35,16 @@
   (let [{:keys [config problems]} (config/check (config/read-file config-file))]
     (p/reply id :ok {:config config :problems (mapv config/problem-text problems)})))
 
+(defmethod handle :rename [{:keys [root]} {:keys [id from to version]}]
+  (if-let [bad (outside root [from to])]
+    (p/failure id :error (str "Not a file in this project: " bad))
+    (let [{:keys [conflict exists] new-version :version} (files/rename! root from to version)]
+      (cond
+        new-version (p/reply id :ok {:version new-version})
+        exists      (p/failure id :error (str to " already exists."))
+        :else       (p/failure id :conflict (str from " changed on disk since it was loaded."
+                                                 (when (= :absent conflict) " It no longer exists.")))))))
+
 (defmethod handle :project [{:keys [root]} {:keys [id]}]
   (p/reply id :ok {:name (str (fs/file-name root))}))
 

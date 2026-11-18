@@ -33,6 +33,7 @@
   {:paths       {:request {}                                             :reply #{:paths}}
    :read        {:request {:paths :strings}                              :reply #{:files}}
    :save        {:request {:path :string :text :string :version :version} :reply #{:version}}
+   :rename      {:request {:from :string :to :string :version :version}  :reply #{:version}}
    :eval        {:request {:path :string :ns :ns :line :int :code :string} :reply #{:out :err :value}}
    :load-file   {:request {:path :string :text :string}                  :reply #{:out :err :value}}
    :interrupt   {:request {:eval :int}                                   :reply #{}}
