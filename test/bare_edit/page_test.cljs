@@ -52,6 +52,8 @@
         (is @stopped)
         (is (= [[:close-tab 1]] @events))
         (reset! events [])))
+    (testing "the tree has a header with the editor's name"
+      (is (= "<BareEdit>" (text (filter #(= "bar files-bar" (:class (second %))) (elements h :div))))))
     (testing "selecting a file in the tree opens it"
       ((:on-x-tree-select (second (first (elements h :x-tree)))) #js {:detail #js {:id "src/b.clj"}})
       (is (= [[:open-file "src/b.clj"]] @events)))

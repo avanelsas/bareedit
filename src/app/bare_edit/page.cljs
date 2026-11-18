@@ -181,7 +181,7 @@
   "The results column for the state `s`, whose controls call `dispatch`: a bar and the entries."
   [{:keys [results unfolded]} dispatch]
   [:div {:class "results"}
-   [:div {:class "results-bar"}
+   [:div {:class "bar results-bar"}
     [:span "Results"]
     [:x-button {:variant "ghost" :size "sm"
                 :on-click (fn [_] (dispatch [:command (steps/command-by-name "clear-results")]))}
@@ -208,6 +208,10 @@
            :aria-label (str "Close " (model/file-name path))
            :on-click (fn [^js e] (.stopPropagation e) (dispatch [:close-tab id]))}
     "×"]])
+
+(def brand
+  "The editor's name in the style of the BareDOM logo: `<BareEdit>`, with blue brackets."
+  [:span {:class "brand"} [:span {:class "bracket"} "<"] "BareEdit" [:span {:class "bracket"} ">"]])
 
 (def tree-json
   "Returns the `x-tree` items for the path list `paths`, as JSON.
@@ -243,17 +247,19 @@
     [:x-theme {:preset (:preset config) :class "app"}
      [:x-split-pane {:position "22" :class "panes"}
       [:div {:slot "start" :class "files"}
-       [:x-tree {:label "Files" :selection "leaf" :guides true
-                 :items (tree-json paths)
-                 :expanded (js/JSON.stringify (clj->js expanded))
-                 :selected (js/JSON.stringify (clj->js (if active-b [(:path active-b)] [])))
-                 :on-x-tree-toggle (fn [^js e] (dispatch [:expand (vec (.. e -detail -nextExpanded))]))
-                 :on-x-tree-select (fn [^js e] (dispatch [:open-file (.. e -detail -id)]))}]]
+       [:div {:class "bar files-bar"} brand]
+       [:div {:class "tree"}
+        [:x-tree {:label "Files" :selection "leaf" :guides true
+                  :items (tree-json paths)
+                  :expanded (js/JSON.stringify (clj->js expanded))
+                  :selected (js/JSON.stringify (clj->js (if active-b [(:path active-b)] [])))
+                  :on-x-tree-toggle (fn [^js e] (dispatch [:expand (vec (.. e -detail -nextExpanded))]))
+                  :on-x-tree-select (fn [^js e] (dispatch [:open-file (.. e -detail -id)]))}]]]
       [:x-split-pane {:slot "end" :class (if results-open? "inner" "inner closed")
                       :position (if results-open? "62" "100") :disabled (not results-open?)}
       [:div {:slot "start" :class "main"}
        ;; the tab bar shows even with no tabs, so its line meets the results bar's
-       [:x-tabs {:value (str active) :label "Open files"
+       [:x-tabs {:class "bar" :value (str active) :label "Open files"
                  :on-value-change-request (fn [^js e]
                                             (.preventDefault e)
                                             (dispatch [:select-tab (js/parseInt (.. e -detail -value))]))}

@@ -7,13 +7,20 @@
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; }
   #app, .app { display: block; height: 100%; }
-  .app { --bar-height: 40px; background: var(--x-color-bg); color: var(--x-color-text); font-family: var(--x-font-family, system-ui, sans-serif); }
+  .app { --bar-height: 40px; --brand-blue: #79bde8; background: var(--x-color-bg); color: var(--x-color-text); font-family: var(--x-font-family, system-ui, sans-serif); }
   .panes { height: 100%; }
-  .files { height: 100%; overflow: auto; padding: 4px 0; box-sizing: border-box; }
+  .files { display: flex; flex-direction: column; height: 100%; min-width: 0; }
+  /* the three bars share one height and one bottom line, so their lines meet */
+  .bar { flex: none; height: var(--bar-height); box-sizing: border-box;
+         border-bottom: 1px solid var(--x-color-border); }
+  .files-bar { display: flex; align-items: center; padding: 0 12px; }
+  .brand { font-family: 'JetBrains Mono', var(--x-font-family-mono, monospace); font-size: 1.05rem;
+           color: var(--x-color-text); white-space: nowrap; }
+  .brand .bracket { color: var(--brand-blue); }
+  .tree { flex: 1; min-height: 0; overflow: auto; padding: 4px 0; }
   .files x-tree { --x-tree-row-height: 1.625rem; --x-tree-gap: 0.25rem; }
   .main { display: flex; flex-direction: column; height: 100%; min-width: 0; }
-  .main x-tabs { flex: none; display: flex; align-items: flex-end; height: var(--bar-height);
-                 box-sizing: border-box; border-bottom: 1px solid var(--x-color-border); padding: 0 4px; }
+  .main x-tabs { display: flex; align-items: flex-end; padding: 0 4px; }
   .main x-tab[selected]::part(base) { background: var(--x-color-surface-hover); }
   .tab-close { margin-left: 6px; padding: 0 4px; border-radius: 3px; opacity: 0.5; cursor: pointer; }
   .tab-close:hover { opacity: 1; background: var(--x-color-surface-active); }
@@ -23,17 +30,13 @@
   .slot { display: contents; }
   .inner { height: 100%; }
   .inner.closed { --x-split-pane-divider-size: 0; }
-  /* the bars' bottom line runs on through the divider's grab area, so the lines meet */
-  .inner::part(divider) { background: linear-gradient(var(--x-color-border), var(--x-color-border))
-                          0 calc(var(--bar-height) - 1px) / 100% 1px no-repeat; }
-  /* the tree has no bar, so beside it the line runs only from the divider's centre */
-  .panes::part(divider) { background: linear-gradient(var(--x-color-border), var(--x-color-border))
-                          right calc(var(--bar-height) - 1px) / 50% 1px no-repeat; }
+  /* the bars' bottom line runs on through each divider's grab area, so the lines meet */
+  .panes::part(divider), .inner::part(divider) {
+    background: linear-gradient(var(--x-color-border), var(--x-color-border))
+                0 calc(var(--bar-height) - 1px) / 100% 1px no-repeat; }
   .results-pane { height: 100%; min-width: 0; }
   .results { display: flex; flex-direction: column; height: 100%; }
-  .results-bar { flex: none; display: flex; align-items: center; justify-content: space-between;
-                 height: var(--bar-height); box-sizing: border-box;
-                 padding: 0 8px; border-bottom: 1px solid var(--x-color-border);
+  .results-bar { display: flex; align-items: center; justify-content: space-between; padding: 0 8px;
                  color: var(--x-color-text-muted); }
   .entries { flex: 1; overflow: auto; font-size: var(--x-font-size-base, 1rem); }
   .entry { border-bottom: 1px solid var(--x-color-border); padding: 6px 8px; }
