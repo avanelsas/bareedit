@@ -166,7 +166,10 @@
 (defn- open!
   "Opens a connection for `client` to the REPL at `port`.
   It reads the REPL's operations, and its Java version and attach flag in a session that is
-  closed again. The connection is published only when complete. Returns `{:conn conn}` or
+  closed again. That evaluation prints with [[bare-edit.repl/print-options]], so the
+  printer is loaded once here: nREPL loads it on first use, without a lock, and two
+  sessions that both use it first could each load it half. The connection is published
+  only when complete. Returns `{:conn conn}` or
   a failure."
   [client port]
   (let [socket (Socket.)]
@@ -179,9 +182,10 @@
         (let [ops    (answer (ask client conn {"op" "describe"}) "ops")
               probe  (answer (ask client conn {"op" "clone"}) "new-session")
               props  (when probe
-                       (answer (ask client conn {"op" "eval" "session" probe
-                                                 "code" (str "[(System/getProperty \"java.specification.version\")"
-                                                             " (System/getProperty \"jdk.attach.allowAttachSelf\")]")})
+                       (answer (ask client conn (merge {"op" "eval" "session" probe
+                                                        "code" (str "[(System/getProperty \"java.specification.version\")"
+                                                                    " (System/getProperty \"jdk.attach.allowAttachSelf\")]")}
+                                                       repl/print-options))
                                "value"))
               [java flag] (try (edn/read-string props) (catch Exception _ nil))]
           (when probe (ask client conn {"op" "close" "session" probe}))

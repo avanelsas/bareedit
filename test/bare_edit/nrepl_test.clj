@@ -156,9 +156,9 @@
       (send-request a (p/request :eval 1 {:path "a.clj" :ns nil :line 1 :code "(loop [i 0] (recur (inc i)))"}))
       (Thread/sleep 300)
       (testing "a long evaluation in one tab does not hold up another tab"
-        (is (= {:status :ok :value "3"}
+        (is (= {:status :ok :value "3" :err ""}
                (select-keys (ask b (p/request :eval 1 {:path "a.clj" :ns nil :line 1 :code "(+ 1 2)"}))
-                            [:status :value :message]))))
+                            [:status :value :message :err]))))
       (testing "an evaluation that waits behind a running one says so when interrupted"
         (send-request a (p/request :eval 2 {:path "a.clj" :ns nil :line 1 :code "(+ 1 2)"}))
         (Thread/sleep 100)
