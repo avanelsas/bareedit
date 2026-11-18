@@ -24,7 +24,7 @@
   [& args]
   (let [opts (cli/parse-opts args {:spec cli-spec})
         {:keys [url]} (server/start! (assoc opts :root (str (fs/cwd))))]
-    (println "BareEditClj for" (str (fs/cwd)))
+    (println "BareEdit for" (str (fs/cwd)))
     (println url)
     (when-not (:no-open opts) (open-browser! url))
     @(promise)))

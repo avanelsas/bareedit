@@ -1,4 +1,4 @@
-# BareEditClj
+# BareEdit
 
 <p align="center">
   <picture>
@@ -12,7 +12,7 @@ A small, local, browser-based editor for Clojure and ClojureScript. Run `bare-ed
 
 ## The REPL
 
-BareEditClj evaluates Clojure through the project's own nREPL. It never starts one: start it in the project folder, before or after the editor, and the editor finds it from `.nrepl-port`, or else from `.shadow-cljs/nrepl.port`. When the REPL stops or restarts, the next evaluation connects again.
+BareEdit evaluates Clojure through the project's own nREPL. It never starts one: start it in the project folder, before or after the editor, and the editor finds it from `.nrepl-port`, or else from `.shadow-cljs/nrepl.port`. When the REPL stops or restarts, the next evaluation connects again.
 
 ```sh
 clojure -Sdeps '{:deps {nrepl/nrepl {:mvn/version "1.7.0"}}}' \
@@ -40,7 +40,7 @@ On Java 20 and later, nREPL can stop running code only when the JVM has `-Djdk.a
 
 ## ClojureScript
 
-BareEditClj evaluates ClojureScript through the project's shadow-cljs. Start shadow-cljs in the project folder with a watch, and run the app so that a JS runtime connects:
+BareEdit evaluates ClojureScript through the project's shadow-cljs. Start shadow-cljs in the project folder with a watch, and run the app so that a JS runtime connects:
 
 ```sh
 npx shadow-cljs watch app

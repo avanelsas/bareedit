@@ -39,7 +39,7 @@
 (deftest page-is-served
   (let [resp (http/get (str "http://127.0.0.1:" (:port *srv*) "/") {:throw false})]
     (is (= 200 (:status resp)))
-    (is (re-find #"BareEditClj" (:body resp)))))
+    (is (re-find #"BareEdit" (:body resp)))))
 
 (deftest only-on-loopback
   (is (re-find #"^http://127\.0\.0\.1:\d+/\?token=[0-9a-f]{48}$" (:url *srv*))))
