@@ -470,3 +470,7 @@
       (let [r (run s [:command (steps/command-by-name "save")])]
         (is (= [[:toast :info "Still saving or renaming a.clj."]]
                (:fx (renaming (:state r) "src/c.clj"))))))))
+
+(deftest every-group-is-known
+  (doseq [{:keys [id group]} steps/commands :when group]
+    (is (contains? steps/group-order group) (str id " has a known group"))))
