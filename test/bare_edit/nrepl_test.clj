@@ -16,15 +16,18 @@
 
 (defn- start-nrepl!
   "Starts an nREPL for the project at `dir` and waits for its port file.
-  The JVM gets `-Djdk.attach.allowAttachSelf`, so an interrupt stops the code."
+  The JVM gets `-Djdk.attach.allowAttachSelf`, so an interrupt stops the code. When the
+  nREPL does not start, the exception holds its error output."
   [dir]
-  (let [proc (process/process {:dir (str dir) :out :discard :err :discard}
+  (let [err  (fs/file (fs/create-temp-file {:suffix ".txt"}))
+        proc (process/process {:dir (str dir) :out :discard :err :write :err-file err}
                               "clojure" "-Sdeps" "{:deps {nrepl/nrepl {:mvn/version \"1.7.0\"}}}"
                               "-J-Djdk.attach.allowAttachSelf" "-M" "-m" "nrepl.cmdline" "--port" "0")]
     (loop [i 0]
       (cond (fs/exists? (fs/path dir ".nrepl-port")) proc
             (< i 240) (do (Thread/sleep 250) (recur (inc i)))
-            :else (throw (ex-info "The test nREPL did not start." {}))))))
+            :else (do (process/destroy-tree proc)
+                      (throw (ex-info (str "The test nREPL did not start:\n" (slurp err)) {})))))))
 
 (use-fixtures :once
   (fn [t]
@@ -153,7 +156,9 @@
       (send-request a (p/request :eval 1 {:path "a.clj" :ns nil :line 1 :code "(loop [i 0] (recur (inc i)))"}))
       (Thread/sleep 300)
       (testing "a long evaluation in one tab does not hold up another tab"
-        (is (= "3" (:value (ask b (p/request :eval 1 {:path "a.clj" :ns nil :line 1 :code "(+ 1 2)"}))))))
+        (is (= {:status :ok :value "3"}
+               (select-keys (ask b (p/request :eval 1 {:path "a.clj" :ns nil :line 1 :code "(+ 1 2)"}))
+                            [:status :value :message]))))
       (testing "an evaluation that waits behind a running one says so when interrupted"
         (send-request a (p/request :eval 2 {:path "a.clj" :ns nil :line 1 :code "(+ 1 2)"}))
         (Thread/sleep 100)
