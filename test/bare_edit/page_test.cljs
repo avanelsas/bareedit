@@ -209,3 +209,16 @@
              (map :label (filter #(= "File" (:group %)) items)))))
     (testing "commands outside the palette are left out"
       (is (not-any? #(= "command-palette" (:id %)) items)))))
+
+(deftest syntax-colour-overrides
+  (testing "each mode's colours apply only in that mode"
+    (is (= (str "@media (prefers-color-scheme: light){.app{--x-color-syntax-keyword:#a626a4;}}"
+                "@media (prefers-color-scheme: dark){.app{--x-color-syntax-keyword:#c678dd;"
+                "--x-color-syntax-string:#98c379;}}")
+           (page/syntax-style {:light {:keyword "#a626a4"} :dark {:string "#98c379" :keyword "#c678dd"}}))))
+  (testing "no overrides, no CSS"
+    (is (= "" (page/syntax-style nil)))
+    (is (= "" (page/syntax-style {:light {}}))))
+  (testing "the page carries the overrides"
+    (is (= (page/syntax-style {:dark {:tag "teal"}})
+           (text (elements (render (assoc state :config {:syntax {:dark {:tag "teal"}}}) (atom [])) :style))))))

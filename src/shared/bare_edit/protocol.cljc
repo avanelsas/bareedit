@@ -15,6 +15,12 @@
     #"\.cljc?$"     :clj
     nil))
 
+(def syntax-tokens
+  "The names of BareDOM's syntax colour tokens, which colour code in the theme.
+  The look and feel may override each, and the editor colours code with them. Token
+  `:keyword` is the CSS variable `--x-color-syntax-keyword`."
+  #{:comment :keyword :string :constant :function :type :tag})
+
 (def statuses
   "The closed set of reply statuses. A `:running` status exists only in the browser."
   #{:ok :error :conflict :interrupted :no-runtime :unavailable})

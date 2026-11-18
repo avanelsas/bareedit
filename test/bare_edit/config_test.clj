@@ -14,22 +14,38 @@
 
 (deftest wrong-values-fall-back-one-by-one
   (is (= {:config   {:preset "default"}
-          :problems [{:problem :unknown-key :key :theem}
-                     {:problem :invalid :key :font-mono :value "a; b"}
-                     {:problem :invalid :key :font-size :value "14"}
-                     {:problem :unknown-key :key :fontsize :in :theme}
-                     {:problem :invalid :key :preset :value "oceen"}]}
+          :problems [{:problem :unknown-key :path [:theem]}
+                     {:problem :invalid :path [:theme :font-mono] :value "a; b"
+                      :must "a list of fonts, such as \"Menlo, monospace\""}
+                     {:problem :invalid :path [:theme :font-size] :value "14" :must "a number of pixels, such as 14"}
+                     {:problem :unknown-key :path [:theme :fontsize]}
+                     {:problem :invalid :path [:theme :preset] :value "oceen"
+                      :must (str "one of \"aurora\", \"default\", \"forest\", \"mono-ai\", \"neo-brutalist\", "
+                                 "\"ocean\", \"sunset\", \"warm-mineral\"")}]}
          (config/check "{:theme {:preset \"oceen\" :font-mono \"a; b\" :font-size \"14\" :fontsize 3} :theem 1}")))
   (testing "a good value stays when another is wrong"
-    (is (= {:config   {:preset "forest"}
-            :problems [{:problem :invalid :key :font-size :value -1}]}
-           (config/check "{:theme {:preset \"forest\" :font-size -1}}")))))
+    (is (= {:preset "forest"} (:config (config/check "{:theme {:preset \"forest\" :font-size -1}}"))))))
+
+(deftest syntax-colours
+  (testing "colours for each mode are kept"
+    (is (= {:config   {:preset "default" :syntax {:light {:keyword "#a626a4"} :dark {:keyword "#c678dd" :string "#98c379"}}}
+            :problems []}
+           (config/check "{:theme {:syntax {:light {:keyword \"#a626a4\"} :dark {:keyword \"#c678dd\" :string \"#98c379\"}}}}"))))
+  (testing "an unknown mode or token, a bad colour and a mode that is not a map are ignored one by one"
+    (let [{:keys [config problems]}
+          (config/check "{:theme {:syntax {:dark {:keyword \"red; x\" :strng \"red\" :string \"green\"} :dim {} :light 3}}}")]
+      (is (= {:preset "default" :syntax {:dark {:string "green"}}} config))
+      (is (= [[:invalid [:theme :syntax :dark :keyword]]
+              [:unknown-key [:theme :syntax :dark :strng]]
+              [:unknown-key [:theme :syntax :dim]]
+              [:invalid [:theme :syntax :light]]]
+             (map (juxt :problem :path) problems))))))
 
 (deftest files-that-cannot-be-used
-  (are [text problem] (= {:config {:preset "default"} :problems [{:problem problem}]} (config/check text))
-    "{:theme"           :not-edn
-    "[1 2]"             :not-a-map
-    "{:theme \"ocean\"}" :theme-not-a-map))
+  (are [text problems] (= {:config {:preset "default"} :problems problems} (config/check text))
+    "{:theme"           [{:problem :not-edn}]
+    "[1 2]"             [{:problem :not-a-map}]
+    "{:theme \"ocean\"}" [{:problem :invalid :path [:theme] :value "ocean" :must "a map"}]))
 
 (deftest the-words-for-each-problem
   (are [problem text] (= text (config/problem-text problem))
@@ -37,14 +53,9 @@
     "config.edn is not valid EDN, so the defaults are used."
     {:problem :not-a-map}
     "config.edn must be a map, such as {:theme {:preset \"ocean\"}}, so the defaults are used."
-    {:problem :theme-not-a-map}
-    "Ignored :theme in config.edn: it must be a map."
-    {:problem :unknown-key :key :theem}
+    {:problem :unknown-key :path [:theem]}
     "Ignored the unknown key :theem in config.edn."
-    {:problem :unknown-key :key :fontsize :in :theme}
-    "Ignored the unknown key :fontsize under :theme in config.edn."
-    {:problem :invalid :key :font-size :value "14"}
-    "Ignored :font-size \"14\" in config.edn: it must be a number of pixels, such as 14."
-    {:problem :invalid :key :preset :value "oceen"}
-    (str "Ignored :preset \"oceen\" in config.edn: it must be one of \"aurora\", \"default\", \"forest\", "
-         "\"mono-ai\", \"neo-brutalist\", \"ocean\", \"sunset\", \"warm-mineral\".")))
+    {:problem :unknown-key :path [:theme :syntax :dark :strng]}
+    "Ignored the unknown key :strng under :theme :syntax :dark in config.edn."
+    {:problem :invalid :path [:theme :font-size] :value "14" :must "a number of pixels, such as 14"}
+    "Ignored :theme :font-size \"14\" in config.edn: it must be a number of pixels, such as 14."))

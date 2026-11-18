@@ -70,29 +70,29 @@
 
 (def syntax-colours
   "The BareDOM syntax token that colours each kind of Clojure code, as `[tag token]` pairs.
-  `tag` is the style tag clojure-mode gives the code, and `token` names the theme's
-  `--x-color-syntax-*` colour. The symbol in call position and the defining forms, such as
-  `defn`, are keywords; the name a form defines is a function; Clojure keywords, numbers,
-  booleans and `nil` are constants; docstrings are strings; metadata is a type. Other
-  symbols keep the text colour."
-  [[(.-comment tags)                           "comment"]
-   [(.-lineComment tags)                       "comment"]
-   [(.-keyword tags)                           "keyword"]
-   [(.-definitionKeyword tags)                 "keyword"]
-   [(.-macroName tags)                         "keyword"]
-   [(.definition tags (.-variableName tags))   "function"]
-   [(.-string tags)                            "string"]
-   [(.-regexp tags)                            "string"]
-   [(.-emphasis tags)                          "string"]
-   [(.-atom tags)                              "constant"]
-   [(.-number tags)                            "constant"]
-   [(.-bool tags)                              "constant"]
-   [(.-null tags)                              "constant"]
-   [(.-meta tags)                              "type"]])
+  `tag` is the style tag clojure-mode gives the code, and `token` is one of
+  [[bare-edit.protocol/syntax-tokens]]. The symbol in call position and the defining forms,
+  such as `defn`, are keywords; the name a form defines is a function; Clojure keywords,
+  numbers, booleans and `nil` are constants; docstrings are strings; metadata is a type.
+  Other symbols keep the text colour."
+  [[(.-comment tags)                           :comment]
+   [(.-lineComment tags)                       :comment]
+   [(.-keyword tags)                           :keyword]
+   [(.-definitionKeyword tags)                 :keyword]
+   [(.-macroName tags)                         :keyword]
+   [(.definition tags (.-variableName tags))   :function]
+   [(.-string tags)                            :string]
+   [(.-regexp tags)                            :string]
+   [(.-emphasis tags)                          :string]
+   [(.-atom tags)                              :constant]
+   [(.-number tags)                            :constant]
+   [(.-bool tags)                              :constant]
+   [(.-null tags)                              :constant]
+   [(.-meta tags)                              :type]])
 
 (def token-styles
   "What a syntax token adds to its colour, by token: comments are italic."
-  {"comment" {:fontStyle "italic"}})
+  {:comment {:fontStyle "italic"}})
 
 (def highlight-style
   "Syntax colours from the theme's syntax tokens, as a CodeMirror `HighlightStyle`.
@@ -101,7 +101,7 @@
   classes are added to the page when the editor mounts."
   (.define HighlightStyle
            (clj->js (for [[tag token] syntax-colours]
-                      (merge {:tag tag :color (str "var(--x-color-syntax-" token ")")}
+                      (merge {:tag tag :color (str "var(--x-color-syntax-" (name token) ")")}
                              (token-styles token))))))
 
 (def highlighting

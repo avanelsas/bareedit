@@ -2,6 +2,7 @@
   "Tests the editor's commands on editor states, with no view."
   (:require [bare-edit.editor :as editor]
             [bare-edit.keys :as keys]
+            [bare-edit.protocol :as p]
             [bare-edit.steps :as steps]
             [clojure.set]
             [clojure.test :refer [deftest is are testing]]))
@@ -108,9 +109,8 @@
                   :keywordize-keys true))))
 
 (deftest syntax-colours-come-from-the-theme
-  (let [tokens #{"comment" "keyword" "string" "constant" "function" "type" "tag"}]
-    (doseq [[_ token] editor/syntax-colours]
-      (is (contains? tokens token) (str token " is one of the theme's syntax tokens")))))
+  (doseq [[_ token] editor/syntax-colours]
+    (is (contains? p/syntax-tokens token) (str token " is one of the theme's syntax tokens"))))
 
 (deftest a-defined-name-has-its-own-colour
   (let [classes (into {} (editor/highlighted "(defn foo [x] (inc x))"))]
