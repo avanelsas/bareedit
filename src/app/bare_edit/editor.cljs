@@ -68,23 +68,41 @@
                     ".cm-searchMatch.cm-searchMatch-selected"
                     {:backgroundColor "color-mix(in srgb, var(--x-color-warning) 60%, transparent)"}})))
 
+(def syntax-colours
+  "The BareDOM syntax token that colours each kind of Clojure code, as `[tag token]` pairs.
+  `tag` is the style tag clojure-mode gives the code, and `token` names the theme's
+  `--x-color-syntax-*` colour. The symbol in call position and the defining forms, such as
+  `defn`, are keywords; the name a form defines is a function; Clojure keywords, numbers,
+  booleans and `nil` are constants; docstrings are strings; metadata is a type. Other
+  symbols keep the text colour."
+  [[(.-comment tags)                           "comment"]
+   [(.-lineComment tags)                       "comment"]
+   [(.-keyword tags)                           "keyword"]
+   [(.-definitionKeyword tags)                 "keyword"]
+   [(.-macroName tags)                         "keyword"]
+   [(.definition tags (.-variableName tags))   "function"]
+   [(.-string tags)                            "string"]
+   [(.-regexp tags)                            "string"]
+   [(.-emphasis tags)                          "string"]
+   [(.-atom tags)                              "constant"]
+   [(.-number tags)                            "constant"]
+   [(.-bool tags)                              "constant"]
+   [(.-null tags)                              "constant"]
+   [(.-meta tags)                              "type"]])
+
+(def token-styles
+  "What a syntax token adds to its colour, by token: comments are italic."
+  {"comment" {:fontStyle "italic"}})
+
 (def highlight-style
-  "Syntax colours from BareDOM's colour tokens, as a CodeMirror `HighlightStyle`.
-  The editor uses it through [[highlighting]], and [[highlighted]] uses it for text that
-  is not in the editor. Its CSS classes are added to the page when the editor mounts."
+  "Syntax colours from the theme's syntax tokens, as a CodeMirror `HighlightStyle`.
+  It is built from [[syntax-colours]] and [[token-styles]]. The editor uses it through
+  [[highlighting]], and [[highlighted]] uses it for text that is not in the editor. Its CSS
+  classes are added to the page when the editor mounts."
   (.define HighlightStyle
-           (clj->js [{:tag (.-keyword tags) :color "var(--x-color-primary)"}
-                      {:tag (.-atom tags) :color "var(--x-color-primary)"}
-                      {:tag (.-string tags) :color "var(--x-color-success)"}
-                      {:tag (.-regexp tags) :color "var(--x-color-success)"}
-                      {:tag (.-number tags) :color "var(--x-color-warning)"}
-                      {:tag (.-bool tags) :color "var(--x-color-warning)"}
-                      {:tag (.-null tags) :color "var(--x-color-warning)"}
-                      {:tag (.-comment tags) :color "var(--x-color-text-muted)" :fontStyle "italic"}
-                      {:tag (.-lineComment tags) :color "var(--x-color-text-muted)" :fontStyle "italic"}
-                      {:tag (.-definitionKeyword tags) :color "var(--x-color-secondary)"}
-                      {:tag (.-macroName tags) :color "var(--x-color-secondary)"}
-                      {:tag (.-meta tags) :color "var(--x-color-text-muted)"}])))
+           (clj->js (for [[tag token] syntax-colours]
+                      (merge {:tag tag :color (str "var(--x-color-syntax-" token ")")}
+                             (token-styles token))))))
 
 (def highlighting
   "The editor extension that colours the syntax with [[highlight-style]]."
