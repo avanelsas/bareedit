@@ -50,14 +50,18 @@
 (defn -main
   "Starts the server for the project folder, prints its URL and opens it in the browser.
   `args` are the command-line options in [[cli-spec]] and at most one folder, see
-  [[project-root]]. It runs until the process stops."
+  [[project-root]]. It runs until the last browser tab on it has closed, or the process
+  stops."
   [& args]
   (let [{:keys [opts args]}           (cli/parse-args args {:spec cli-spec})
         {:keys [root problem] :as chosen} (project-root (str (fs/cwd)) args)]
     (if problem
       (fail! (problem-text chosen))
-      (let [{:keys [url]} (server/start! (assoc opts :root root))]
+      (let [{:keys [url stopping stop]} (server/start! (assoc opts :root root))]
         (println "BareEdit for" root)
         (println url)
         (when-not (:no-open opts) (open-browser! url))
-        @(promise)))))
+        @stopping
+        (println "The browser tab closed, so BareEdit stopped.")
+        (stop)
+        (System/exit 0)))))

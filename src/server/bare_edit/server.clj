@@ -198,19 +198,54 @@
                  "Cache-Control" "no-store"}
        :body (io/input-stream res)})))
 
+;; ── Pages ───────────────────────────────────────────────────────────────────
+
+(def close-wait-ms
+  "How long the server waits, after the last page closes, before it stops.
+  A reload closes the page's connection and opens a new one, which comes within this time
+  and keeps the server running."
+  5000)
+
+(defn pages-after
+  "The `pages` value after the event `[kind ch]`, where `kind` is `:open` or `:close`.
+  `ch` is the page's channel. `pages` is `{:open :closes}`: the set of open channels, and
+  how many times the last one closed. That count tells a stop that is still due from one
+  a later close replaced."
+  [pages [kind ch]]
+  (case kind
+    :open  (update pages :open conj ch)
+    :close (let [pages (update pages :open disj ch)]
+             (cond-> pages (empty? (:open pages)) (update :closes inc)))))
+
+(defn- page-closed!
+  "Records that the page on the channel `ch` closed, in the `:pages` atom of `ctx`.
+  When it was the last, `:stopping` in `ctx` is delivered after `:close-wait-ms`, unless a
+  page opened in the meantime."
+  [{:keys [pages close-wait-ms stopping]} ch]
+  (let [{:keys [open closes]} (swap! pages pages-after [:close ch])]
+    (when (empty? open)
+      (future
+        (Thread/sleep (long close-wait-ms))
+        (let [now @pages]
+          (when (and (empty? (:open now)) (= closes (:closes now)))
+            (deliver stopping :last-page-closed)))))))
+
 (defn- ws-handler
   "Accepts the WebSocket request `req` when [[allowed?]] by `ctx`, and answers each frame.
   Each frame is handled with the channel and a `:reply!` for it in the context. When the
-  connection closes, its evaluations in flight are dropped without being stopped."
+  connection closes, its evaluations in flight are dropped without being stopped, and the
+  server stops if it was the last page, see [[page-closed!]]."
   [ctx req]
   (if-not (allowed? ctx req)
     {:status 403 :body "Forbidden"}
     (hk/as-channel req
-      {:on-receive (fn [ch text]
+      {:on-open    (fn [ch] (swap! (:pages ctx) pages-after [:open ch]))
+       :on-receive (fn [ch text]
                      (let [reply! #(hk/send! ch (p/encode %))]
                        (some-> (respond (assoc ctx :channel ch :reply! reply!) text) reply!)))
        :on-close   (fn [ch _status]
-                     (nrepl/forget-channel! (:repl ctx) ch))})))
+                     (nrepl/forget-channel! (:repl ctx) ch)
+                     (page-closed! ctx ch))})))
 
 (defn- app
   "The Ring handler for the server, which serves the WebSocket and the page's files.
@@ -228,10 +263,14 @@
 (defn start!
   "Starts the server for the project at `:root` in `opts`, on `127.0.0.1` and a free port.
   `:build` in `opts` is the shadow-cljs build named with `--build`, if any, and
-  `:config-file` the look and feel file, [[config/default-file]] unless given. Returns the
-  context as a value: `opts` with the canonical `:root`, and `:port`, `:token`, `:repl`,
+  `:config-file` the look and feel file, [[config/default-file]] unless given, and
+  `:close-wait-ms` the wait after the last page closes, [[close-wait-ms]] unless given.
+  Returns the context: `opts` with the canonical `:root`, and `:port`, `:token`, `:repl`,
   the client for the project's nREPLs, `:url`, and `:stop`, a function that stops the
-  server and closes the REPL connections."
+  server and closes the REPL connections. Two entries are places, not values: `:pages`, an
+  atom of the open pages that each connection changes as it opens and closes, and
+  `:stopping`, a promise delivered once the last page has closed and none opened in the
+  wait."
   [{:keys [root] :as opts}]
   (let [ctx    (promise)
         server (hk/run-server (app ctx) {:ip "127.0.0.1" :port 0 :legacy-return-value? false})
@@ -240,7 +279,10 @@
         root   (str (fs/canonicalize root))
         client (nrepl/client root (:build opts))]
     (deliver ctx (assoc opts :root root :port port :token token :repl client
-                            :config-file (or (:config-file opts) config/default-file)))
+                            :config-file (or (:config-file opts) config/default-file)
+                            :close-wait-ms (or (:close-wait-ms opts) close-wait-ms)
+                            :pages (atom {:open #{} :closes 0})
+                            :stopping (promise)))
     (assoc @ctx
            :url (str "http://127.0.0.1:" port "/?token=" token)
            :stop #(do (hk/server-stop! server) (nrepl/close! client)))))
