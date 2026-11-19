@@ -179,6 +179,30 @@
     "config.edn"
     (last (str/split path #"/"))))
 
+(def languages
+  "The editor's language for each file extension, without the dot.
+  The settings file is EDN, so Clojure. Any other file is plain text."
+  {"clj" :clojure "cljs" :clojure "cljc" :clojure "edn" :clojure "bb" :clojure
+   "md" :markdown "markdown" :markdown
+   "html" :html "htm" :html
+   "css" :css
+   "json" :json
+   "js" :javascript "mjs" :javascript "cjs" :javascript "jsx" :javascript})
+
+(def language-names
+  "The name the status bar shows for each language that has one."
+  {:markdown "Markdown" :html "HTML" :css "CSS" :json "JSON" :javascript "JavaScript"})
+
+(defn language-of
+  "The editor's language for the file at `path`, such as `:clojure`, `:markdown` or `:text`.
+  See [[languages]]. The settings file, whose path is `:settings`, is EDN."
+  [path]
+  (if (settings? path)
+    :clojure
+    (let [nm  (file-name path)
+          dot (str/last-index-of nm ".")]
+      (get languages (when (and dot (pos? dot)) (str/lower-case (subs nm (inc dot)))) :text))))
+
 (defn ns-of
   "The namespace named by the `ns` form in the Clojure source `text`, or `nil`.
   Metadata before the name, such as `^:no-doc`, is skipped."

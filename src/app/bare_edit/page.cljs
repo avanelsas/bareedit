@@ -273,7 +273,9 @@
        [:span {:class (str "dot " tone) :title (or message "")}
         (str (kind-names kind) ": " words)])
      [:span {:class "fill"}]
-     [:span {:class "kind"} (or (kind-names (p/kind-for path)) "")]
+     [:span {:class "kind"} (or (kind-names (p/kind-for path))
+                                (model/language-names (some-> path model/language-of))
+                                "")]
      [:span {:class "cursor"} (if line (str "Ln " line ", Col " col) "")]
      [:x-button {:variant "ghost" :size "sm" :title "Show all commands (Mod-Shift-p or F1)"
                  :on-click (fn [_] (dispatch [:command (steps/command-by-name "command-palette")]))}

@@ -1,15 +1,21 @@
 (ns bare-edit.editor
-  "The CodeMirror 6 editor for Clojure.
+  "The CodeMirror 6 editor for Clojure, with Markdown, HTML, CSS, JSON, JavaScript and text.
   There is one view; each buffer holds its own immutable `EditorState`, and the view shows
   the active buffer's. The theme and highlighting use BareDOM's `--x-*` colour tokens, so
   dark mode follows the BareDOM theme."
-  (:require ["@codemirror/autocomplete" :refer [autocompletion completeAnyWord completionKeymap
-                                                startCompletion]]
-            ["@codemirror/commands" :refer [history historyKeymap standardKeymap toggleComment]]
+  (:require ["@codemirror/autocomplete" :refer [autocompletion closeBrackets completeAnyWord
+                                                completionKeymap startCompletion]]
+            ["@codemirror/commands" :refer [history historyKeymap indentMore insertNewlineAndIndent
+                                            standardKeymap toggleComment]]
+            ["@codemirror/lang-css" :refer [css]]
+            ["@codemirror/lang-html" :refer [html]]
+            ["@codemirror/lang-javascript" :refer [javascript]]
+            ["@codemirror/lang-json" :refer [json]]
+            ["@codemirror/lang-markdown" :refer [markdown]]
             ["@codemirror/language" :refer [bracketMatching HighlightStyle syntaxHighlighting
                                             syntaxTree]]
             ["@codemirror/search" :refer [openSearchPanel search searchKeymap]]
-            ["@codemirror/state" :refer [EditorState]]
+            ["@codemirror/state" :refer [Compartment EditorState]]
             ["@codemirror/view" :refer [EditorView keymap lineNumbers]]
             ["@lezer/highlight" :refer [highlightTree tags]]
             [clojure.string :as str]
@@ -84,7 +90,10 @@
   [[bare-edit.protocol/syntax-tokens]]. The symbol in call position and the defining forms,
   such as `defn`, are keywords; the name a form defines is a function; Clojure keywords,
   numbers, booleans and `nil` are constants; docstrings are strings; metadata is a type.
-  Other symbols keep the text colour."
+  Other symbols keep the text colour. In Markdown, headings are keywords, links functions,
+  code strings, quotes comments, and the marks such as `#` and `*` are tags. In HTML, CSS,
+  JSON and JavaScript, tag names are tags, attributes, classes and types are types, and
+  properties and called functions are functions."
   [[(.-comment tags)                           :comment]
    [(.-lineComment tags)                       :comment]
    [(.-keyword tags)                           :keyword]
@@ -98,7 +107,30 @@
    [(.-number tags)                            :constant]
    [(.-bool tags)                              :constant]
    [(.-null tags)                              :constant]
-   [(.-meta tags)                              :type]])
+   [(.-meta tags)                              :type]
+   ;; Markdown
+   [(.-heading tags)                           :keyword]
+   [(.-link tags)                              :function]
+   [(.-url tags)                               :function]
+   [(.-monospace tags)                         :string]
+   [(.-quote tags)                             :comment]
+   [(.-processingInstruction tags)             :tag]
+   [(.-contentSeparator tags)                  :tag]
+   ;; HTML, CSS, JSON and JavaScript
+   [(.-tagName tags)                           :tag]
+   [(.-attributeName tags)                     :type]
+   [(.-attributeValue tags)                    :string]
+   [(.-propertyName tags)                      :function]
+   [(.-className tags)                         :type]
+   [(.-labelName tags)                         :type]
+   [(.-typeName tags)                          :type]
+   [(.-unit tags)                              :constant]
+   [(.-color tags)                             :constant]
+   [(.-controlKeyword tags)                    :keyword]
+   [(.-operatorKeyword tags)                   :keyword]
+   [(.-moduleKeyword tags)                     :keyword]
+   [(.function tags (.-variableName tags))     :function]
+   [(.-documentMeta tags)                      :comment]])
 
 (def token-styles
   "What a syntax token adds to its colour, by token: comments are italic."
@@ -153,17 +185,24 @@
   (let [drop? (some-fn command-keys left-out)]
     (.filter km (fn [^js b] (not (or (drop? (.-key b)) (drop? (.-mac b))))))))
 
-(def ^:private text-bindings
-  "The bindings of the text-editing layer, as a JS array, in the order they are tried.
-  The keys of the completion popup and the search panel come first: they act only while
-  the popup or the panel is open, and otherwise let the key through. Then come Enter and
-  Tab, which indent through clojure-mode, and CodeMirror's standard keys and undo history."
+(defn- bindings-with
+  "The bindings of a text-editing layer whose Enter runs `enter` and Tab runs `tab`.
+  They are a JS array, in the order they are tried. The keys of the completion popup and
+  the search panel come first: they act only while the popup or the panel is open, and
+  otherwise let the key through. Then come Enter and Tab, and CodeMirror's standard keys
+  and undo history."
+  [enter tab]
   (.concat (without-commands completionKeymap)
            (without-commands searchKeymap)
-           #js [#js {:key "Enter" :run commands/enter-and-indent}
-                #js {:key "Tab" :run commands/indent}]
+           #js [#js {:key "Enter" :run enter}
+                #js {:key "Tab" :run tab}]
            (without-commands standardKeymap)
            historyKeymap))
+
+(def ^:private text-bindings
+  "The bindings of the text-editing layer of a Clojure file, which indents through clojure-mode.
+  Every layer binds the same keys, see [[bindings-with]]."
+  (bindings-with commands/enter-and-indent commands/indent))
 
 (def passes-through
   "Keys the text-editing layer binds that also reach the page when they do nothing here.
@@ -183,10 +222,15 @@
           (array-seq text-bindings)))
 
 (def text-layer
-  "The keys that edit text inside the editor, see [[text-bindings]].
+  "The keys that edit text inside a Clojure file, see [[text-bindings]].
   clojure-mode's balanced-bracket keys come with its close-brackets extension. Editor
   commands, such as save or slurp, are matched by the page instead."
   (.of keymap text-bindings))
+
+(def ^:private plain-layer
+  "The keys that edit text in a file that is not Clojure.
+  They are the keys of [[text-layer]], with CodeMirror's own indentation on Enter and Tab."
+  (.of keymap (bindings-with insertNewlineAndIndent indentMore)))
 
 (def ^:private comment-tokens
   "Tells CodeMirror's toggle comment that a Clojure line comment starts with `;;`."
@@ -242,31 +286,65 @@
       (completeAnyWord ctx))))
 
 (def extensions
-  "The extensions every editor state gets.
-  These are line numbers, soft wrapping of long lines, the undo history, [[text-layer]],
-  clojure-mode's syntax, close brackets and selection history, CodeMirror's own bracket
-  matching, search, completion (see [[complete]]), [[highlighting]] and [[theme]].
+  "The extensions every editor state gets, whatever its language.
+  These are line numbers, soft wrapping of long lines, the undo history, CodeMirror's
+  bracket matching, search, completion (see [[complete]]), [[highlighting]] and [[theme]].
   CodeMirror's bracket matching replaces clojure-mode's, which crashes on current
-  CodeMirror versions. Nothing reformats while typing; a structural command tidies the
-  lines it changed, see [[edit]]."
+  CodeMirror versions."
   #js [(lineNumbers)
        (.-lineWrapping EditorView)
        (history)
-       text-layer
-       (cm-clj/syntax)
-       comment-tokens
-       (close-brackets/extension)
-       (sel-history/extension)
        (bracketMatching)
        (search)
        (autocompletion #js {:override #js [complete] :defaultKeymap false})
        highlighting
        theme])
 
+(defn- standard-editing
+  "The extensions of a language that is not Clojure, from `language`, its own extension.
+  They are `language` with [[plain-layer]] and CodeMirror's close brackets."
+  [language]
+  #js [plain-layer language (closeBrackets)])
+
+(def language-extensions
+  "The extensions of each language, see [[bare-edit.model/language-of]].
+  Clojure gets [[text-layer]], clojure-mode's syntax, close brackets and selection
+  history. Nothing reformats while typing; a structural command tidies the lines it
+  changed, see [[edit]]. Markdown gets its syntax, which continues a list on Enter, and
+  CodeMirror's close brackets, as HTML, CSS, JSON and JavaScript do. HTML colours its
+  `<style>` and `<script>` blocks as CSS and JavaScript, and JavaScript allows JSX. Plain
+  text gets the keys alone."
+  {:clojure    #js [text-layer
+                    (cm-clj/syntax)
+                    comment-tokens
+                    (close-brackets/extension)
+                    (sel-history/extension)]
+   :markdown   (standard-editing (markdown))
+   :html       (standard-editing (html))
+   :css        (standard-editing (css))
+   :json       (standard-editing (json))
+   :javascript (standard-editing (javascript #js {:jsx true}))
+   :text       #js [plain-layer]})
+
+(def ^:private language-slot
+  "The `Compartment` that holds a state's [[language-extensions]], so they can be swapped."
+  (Compartment.))
+
 (defn new-state
-  "A new `EditorState` holding `text`, with an empty undo history."
-  [text]
-  (.create EditorState #js {:doc text :extensions extensions}))
+  "A new `EditorState` holding `text` in `language`, with an empty undo history.
+  `language` is a key of [[language-extensions]], `:clojure` when not given."
+  ([text] (new-state text :clojure))
+  ([text language]
+   (.create EditorState #js {:doc text
+                             :extensions #js [extensions
+                                              (.of language-slot (get language-extensions language))]})))
+
+(defn with-language
+  "The `editor-state` in `language`, a key of [[language-extensions]].
+  Its text, selection and undo history stay as they are."
+  [^js editor-state language]
+  (.-state (.update editor-state
+                    #js {:effects (.reconfigure language-slot (get language-extensions language))})))
 
 (defn text
   "The text of `editor-state`, as a string."

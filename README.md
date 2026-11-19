@@ -6,7 +6,7 @@
   </picture>
 </p>
 
-A small, local, browser-based editor for Clojure and ClojureScript, with a file tree, a command palette, structural editing and evaluation through your project's own REPL.
+A small, local, browser-based editor for Clojure and ClojureScript, with a file tree, a command palette, structural editing and evaluation through your project's own REPL. It also edits Markdown, HTML, CSS, JSON and JavaScript, and any other file as plain text.
 
 ![BareEdit with a Clojure file open and two results](docs/assets/screenshot.jpg)
 
