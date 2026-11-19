@@ -110,10 +110,14 @@
   (if state (editor/text state) ""))
 
 (defn unsaved?
-  "Whether the buffer `b` has text that differs from the disk. A loading buffer has none."
-  [b]
+  "Whether the buffer `b` has text that differs from the disk. A loading buffer has none.
+  The page asks this of every tab on every render, so it is cheap: see
+  [[bare-edit.editor/same-text?]]."
+  [{:keys [state disk-text] :as b}]
   (and (not (:loading? b))
-       (not= (buffer-text b) (:disk-text b))))
+       (if state
+         (not (editor/same-text? state disk-text))
+         (not= "" disk-text))))
 
 (defn buffer-ids-for
   "The ids of the buffers in the state `s` that hold the file `path`."

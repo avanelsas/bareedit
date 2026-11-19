@@ -263,6 +263,25 @@
   [^js editor-state]
   (.toString (.-doc editor-state)))
 
+(def ^:private same-text-answers
+  "The last answer of [[same-text?]] for each editor state, as `#js [text answer]`.
+  A state is a value, so the answer for it and a text never changes. The map lets go of a
+  state once nothing else holds it."
+  (js/WeakMap.))
+
+(defn same-text?
+  "Whether the document of `editor-state` is the string `text`.
+  The lengths are compared first, so a text of another length costs nothing, and the answer
+  is kept per state, so asking again about a state that did not change costs nothing."
+  [^js editor-state text]
+  (let [kept (.get same-text-answers editor-state)]
+    (if (and kept (identical? (aget kept 0) text))
+      (aget kept 1)
+      (let [doc    (.-doc editor-state)
+            answer (and (== (.-length doc) (count text)) (= (.toString doc) text))]
+        (.set same-text-answers editor-state #js [text answer])
+        answer))))
+
 (defn cursor-position
   "The line and column of the cursor in `editor-state`, as `[line column]`, both from 1."
   [^js editor-state]
