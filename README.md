@@ -8,7 +8,7 @@
   </picture>
 </p>
 
-A small, local, browser-based editor for Clojure and ClojureScript. Run `bareedit` in a project folder and it opens an editor for that folder.
+A small, local, browser-based editor for Clojure and ClojureScript. Run `bareedit` in a project folder and it opens an editor for that folder. `bareedit path/to/project` opens that folder instead.
 
 ## The REPL
 
