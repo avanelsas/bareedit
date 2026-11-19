@@ -89,7 +89,7 @@
   ([r op args] (send r op args nil))
   ([{s :state :as r} op args local]
    (if-not (connected? s)
-     (toast r :error "Not connected to bare-edit. Restart it to keep editing.")
+     (toast r :error "Not connected to bareedit. Restart it to keep editing.")
      (let [req (p/request op (:next-id s) args)]
        (-> r
            (change #(-> %
@@ -631,7 +631,7 @@
                                                              (assoc :status :unavailable
                                                                     :message "Disconnected before the reply came."))
                                                           rs))))))
-      (toast :error "Disconnected from bare-edit. Restart it to keep editing.")))
+      (toast :error "Disconnected from bareedit. Restart it to keep editing.")))
 
 (defmethod step :focus [r _]
   (refresh r))

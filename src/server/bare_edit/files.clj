@@ -91,7 +91,7 @@
   the owner-only ones of a temp file. When `file` exists, its permissions are copied, so a
   save keeps a script executable."
   [file]
-  (let [tmp (fs/create-file (fs/path (fs/parent file) (str ".bare-edit-" (random-uuid) ".tmp")))]
+  (let [tmp (fs/create-file (fs/path (fs/parent file) (str ".bareedit-" (random-uuid) ".tmp")))]
     (when (and posix? (fs/exists? file))
       (fs/set-posix-file-permissions tmp (fs/posix-file-permissions file)))
     tmp))
@@ -125,7 +125,7 @@
   When the second step fails, the file is moved back to `src` and the failure is thrown, so
   the file never stays under the temporary name."
   [src dst]
-  (let [tmp (fs/path (fs/parent src) (str ".bare-edit-" (random-uuid) ".tmp"))]
+  (let [tmp (fs/path (fs/parent src) (str ".bareedit-" (random-uuid) ".tmp"))]
     (fs/move src tmp)
     (try (fs/move tmp dst)
          (catch Exception e

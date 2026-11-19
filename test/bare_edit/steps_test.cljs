@@ -121,7 +121,7 @@
     (is (= [:closed {}] [(get-in r [:state :conn]) (get-in r [:state :pending])]))
     (testing "nothing is sent, and a request says so"
       (is (= [] (:fx (run (:state r) [:focus]))))
-      (is (= [[:toast :error "Not connected to bare-edit. Restart it to keep editing."]]
+      (is (= [[:toast :error "Not connected to bareedit. Restart it to keep editing."]]
              (:fx (steps/send (steps/result (:state r)) :paths {})))))))
 
 (deftest reloading-keeps-cursor-and-history

@@ -1,5 +1,5 @@
 {
-  "name": "bare-edit",
+  "name": "bareedit",
   "private": true,
   "description": "BareEdit: a small, local, browser-based editor for Clojure and ClojureScript.",
   "devDependencies": {

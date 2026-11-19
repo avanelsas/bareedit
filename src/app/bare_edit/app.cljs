@@ -31,7 +31,7 @@
   editor-view
   (atom {:view nil :shown nil}))
 
-(defonce ^{:doc "The WebSocket to the bare-edit server."}
+(defonce ^{:doc "The WebSocket to the BareEdit server."}
   socket
   (atom nil))
 
