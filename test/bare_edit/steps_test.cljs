@@ -1,6 +1,7 @@
 (ns bare-edit.steps-test
   "Tests the event steps as values in and values out, with no browser, socket or page."
   (:require ["@codemirror/commands" :refer [undo]]
+            ["@codemirror/language" :refer [syntaxTree]]
             [bare-edit.editor :as editor]
             [bare-edit.protocol :as p]
             [bare-edit.settings :as settings]
@@ -554,3 +555,22 @@
 
 (deftest the-page-config-is-the-look-until-the-server-answers
   (is (= {:preset "forest"} (:config (:state (run steps/initial-state [:page-config {:preset "forest"}]))))))
+
+(deftest structural-editing-works-in-clojure-files-only
+  (let [opened-as (fn [path]
+                    (let [r (run (assoc connected :paths [path]) [:open-file path])]
+                      (:state (run (:state r) (reply-to r :ok {:files {path {:text "(a b)" :version "v1"}}})))))]
+    (is (= [[:edit :slurp-forward]] (:fx (run (opened-as "src/a.clj") [:command {:id :slurp-forward}]))))
+    (is (= [[:toast :info "This command works in Clojure files only."]]
+           (:fx (run (opened-as "README.md") [:command {:id :slurp-forward}]))))
+    (testing "commands for any text still run"
+      (is (= [[:edit :toggle-comment]] (:fx (run (opened-as "README.md") [:command {:id :toggle-comment}])))))))
+
+(deftest a-rename-to-another-language-changes-the-editor
+  (let [created (:state (run connected [:command (steps/command-by-name "new-file")]
+                             [:question-path "notes.md"] [:answer :create]))
+        top     (fn [s] (.. (syntaxTree (get-in s [:buffers (:active s) :state])) -topNode -name))]
+    (is (= "Document" (top created)) "a new .md file is Markdown")
+    (is (= "Program" (top (:state (run created [:command (steps/command-by-name "rename-file")]
+                                    [:question-path "notes.clj"] [:answer :rename]))))
+        "renamed to .clj, it is Clojure")))

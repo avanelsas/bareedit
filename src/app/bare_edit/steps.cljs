@@ -139,9 +139,15 @@
 
 (defn- rename-buffers
   "Returns the state `s` with every buffer of the file `from` holding the file `to`.
-  The buffers keep their text, their unsaved changes and their undo history."
+  The buffers keep their text, their unsaved changes and their undo history. When `to`
+  is in another language, such as `.md` renamed to `.clj`, their editor states change to
+  it, see [[bare-edit.model/language-of]]."
   [s from to]
-  (reduce #(assoc-in %1 [:buffers %2 :path] to) s (buffer-ids-for s from)))
+  (let [language (model/language-of to)
+        moved    (fn [b] (cond-> (assoc b :path to)
+                           (and (:state b) (not= language (model/language-of from)))
+                           (update :state editor/with-language language)))]
+    (reduce #(update-in %1 [:buffers %2] moved) s (buffer-ids-for s from))))
 
 (defn busy?
   "Whether, in the state `s`, a save or a rename of the file `path` waits for its reply.
@@ -206,7 +212,9 @@
   editor state."
   [{:keys [state] :as b} {:keys [text version] :as _disk}]
   (assoc b :disk-text text :disk-version version :loading? false
-           :state (if state (editor/replaced state text) (editor/new-state text))))
+           :state (if state
+                    (editor/replaced state text)
+                    (editor/new-state text (model/language-of (:path b))))))
 
 (defn apply-disk
   "Returns the state `s` after the buffer `id` meets `disk`, the file's `:text` and `:version`.
@@ -418,7 +426,8 @@
   `:group`, one of [[command-groups]], under whose header it shows, in the order of this
   list. The commands that open and close the palette have none.
   A command with `:scope :editor` works on the text, so its keys act only while the editor
-  has the focus. The commands the editor itself runs are those of
+  has the focus. A command with `:clojure true` works on Clojure forms only, see
+  [[clojure-only]]. The commands the editor itself runs are those of
   [[bare-edit.editor/command?]].
   [[bare-edit.keys/key-index]] reads this list, the command palette shows it, and
   [[run-command]] runs its entries."
@@ -441,15 +450,15 @@
    {:id :find              :group :edit      :label "Find and replace"        :keys "Mod-f"           :scope :editor}
    {:id :toggle-comment    :group :edit      :label "Toggle comment"          :keys "Mod-/"           :scope :editor}
    {:id :show-completions  :group :edit      :label "Show completions"        :keys "Ctrl-Space"      :scope :editor}
-   {:id :reindent          :group :edit      :label "Reindent the current form"                       :scope :editor}
-   {:id :slurp-forward     :group :structure :label "Slurp forward"           :keys "Ctrl-Shift-0"    :scope :editor}
-   {:id :slurp-backward    :group :structure :label "Slurp backward"          :keys "Ctrl-Shift-9"    :scope :editor}
-   {:id :barf-forward      :group :structure :label "Barf forward"            :keys "Ctrl-Shift-]"    :scope :editor}
-   {:id :barf-backward     :group :structure :label "Barf backward"           :keys "Ctrl-Shift-["    :scope :editor}
-   {:id :unwrap            :group :structure :label "Unwrap"                  :keys "Alt-s"           :scope :editor}
-   {:id :kill              :group :structure :label "Kill to end of form"     :keys "Ctrl-k"          :scope :editor}
-   {:id :expand-selection  :group :structure :label "Expand selection"        :keys "Alt-ArrowUp"     :scope :editor}
-   {:id :shrink-selection  :group :structure :label "Shrink selection"        :keys "Alt-ArrowDown"   :scope :editor}
+   {:id :reindent          :group :edit      :label "Reindent the current form"                       :scope :editor :clojure true}
+   {:id :slurp-forward     :group :structure :label "Slurp forward"           :keys "Ctrl-Shift-0"    :scope :editor :clojure true}
+   {:id :slurp-backward    :group :structure :label "Slurp backward"          :keys "Ctrl-Shift-9"    :scope :editor :clojure true}
+   {:id :barf-forward      :group :structure :label "Barf forward"            :keys "Ctrl-Shift-]"    :scope :editor :clojure true}
+   {:id :barf-backward     :group :structure :label "Barf backward"           :keys "Ctrl-Shift-["    :scope :editor :clojure true}
+   {:id :unwrap            :group :structure :label "Unwrap"                  :keys "Alt-s"           :scope :editor :clojure true}
+   {:id :kill              :group :structure :label "Kill to end of form"     :keys "Ctrl-k"          :scope :editor :clojure true}
+   {:id :expand-selection  :group :structure :label "Expand selection"        :keys "Alt-ArrowUp"     :scope :editor :clojure true}
+   {:id :shrink-selection  :group :structure :label "Shrink selection"        :keys "Alt-ArrowDown"   :scope :editor :clojure true}
    {:id :open-settings     :group :settings  :label "Open settings"}
    {:id :command-palette   :label "Show all commands" :keys ["Mod-Shift-p" "F1"]}
    {:id :close-palette     :label "Close the palette" :keys "Escape"}])
@@ -465,11 +474,19 @@
   "Returns the result `r` after running `command`, dispatched by [[command-dispatch]]."
   command-dispatch)
 
+(def clojure-only
+  "The ids of the commands that work on Clojure forms only.
+  A file in another language refuses them with a toast."
+  (into #{} (comp (filter :clojure) (map :id)) commands))
+
 (defmethod run-command ::editor [{s :state :as r} {:keys [id]}]
-  ;; on the editor only when it shows a loaded buffer
-  (if (get-in s [:buffers (:active s) :state])
-    (update r :fx conj [:edit id])
-    r))
+  (let [{:keys [state path]} (get-in s [:buffers (:active s)])]
+    (cond
+      ;; on the editor only when it shows a loaded buffer
+      (nil? state)                                             r
+      (and (clojure-only id) (not= :clojure (model/language-of path)))
+      (toast r :info "This command works in Clojure files only.")
+      :else                                                    (update r :fx conj [:edit id]))))
 
 (defmethod run-command :save      [r _] (if-let [id (:active (:state r))] (save-buffer r id) r))
 (defmethod run-command :close-tab [r _] (if-let [id (:active (:state r))] (close-tab r id) r))
@@ -814,7 +831,7 @@
   (if (or (seq (buffer-ids-for s path)) (some #{path} (:paths s)))
     (open-path r path)
     (change r add-buffer {:path path :disk-text "" :disk-version :absent
-                          :state (editor/new-state "")})))
+                          :state (editor/new-state "" (model/language-of path))})))
 
 (defmethod step :answer [{s :state :as r} [_ choice]]
   (let [{:keys [kind buffer disk path] :as question} (first (:questions s))]

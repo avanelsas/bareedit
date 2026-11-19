@@ -32,6 +32,10 @@ In `.clj` and `.cljc` files, completions come from the REPL, with the kind and n
 - **New file** asks for a path, and the file is written at the first save. **Rename file** (`F2`) moves the open file.
 - **Changes on disk.** When the window gets focus, open files are checked. A file changed elsewhere reloads, or the editor asks whether to keep your changes or take the disk's.
 
+## Languages
+
+The file's extension decides how it is edited. Clojure files (`.clj`, `.cljs`, `.cljc`, `.edn`, `.bb`) get Clojure colours, indentation and structural editing. Markdown files (`.md`) get Markdown colours, and Enter continues a list. Any other file is plain text. The status bar names the language. Structural editing works in Clojure files only, and evaluation in `.clj`, `.cljc` and `.cljs` files.
+
 ## Structural editing
 
 | Keys | Command |

@@ -1,6 +1,7 @@
 (ns bare-edit.editor-test
   "Tests the editor's commands on editor states, with no view."
-  (:require [bare-edit.editor :as editor]
+  (:require ["@codemirror/language" :refer [syntaxTree]]
+            [bare-edit.editor :as editor]
             [bare-edit.keys :as keys]
             [bare-edit.protocol :as p]
             [bare-edit.steps :as steps]
@@ -128,3 +129,9 @@
     (testing "the answer for a state and a text stays the same when asked again"
       (is (editor/same-text? s "(ns a)"))
       (is (not (editor/same-text? s "(ns b)"))))))
+
+(deftest each-language-has-its-parser
+  (let [top (fn [state] (.. (syntaxTree state) -topNode -name))]
+    (is (= "Program" (top (editor/new-state "(ns a)"))) "Clojure is the default")
+    (is (= "Document" (top (editor/new-state "# Title" :markdown))))
+    (is (not= "Program" (top (editor/new-state "(ns a)" :text))) "plain text is not parsed as Clojure")))

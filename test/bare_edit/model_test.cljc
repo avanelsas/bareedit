@@ -109,4 +109,15 @@
   (is (= "(abc…" (model/form-head "(abcdef)" 4)))
   (is (= "" (model/form-head nil 10))))
 
-
+(deftest language-of
+  (are [path language] (= language (model/language-of path))
+    "src/a.clj"        :clojure
+    "src/a.cljs"       :clojure
+    "deps.edn"         :clojure
+    :settings          :clojure
+    "README.md"        :markdown
+    "docs/NOTES.MD"    :markdown
+    "a.markdown"       :markdown
+    "notes.txt"        :text
+    "Makefile"         :text
+    ".gitignore"       :text))
