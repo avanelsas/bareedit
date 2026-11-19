@@ -37,7 +37,7 @@
 (deftest connecting-refreshes
   (let [r (run (assoc steps/initial-state :buffers {1 {:id 1 :path "src/a.clj" :disk-text ""}})
                [:connected])]
-    (is (= [[:send {:op :paths :id 1}] [:send {:op :read :id 2 :paths ["src/a.clj"]}]
+    (is (= [[:send {:op :paths :id 1}] [:send {:op :read :id 2 :paths ["src/a.clj"] :known {}}]
             [:send {:op :config :id 3}] [:send {:op :project :id 4}]]
            (:fx r)))
     (is (= #{1 2 3 4} (set (keys (get-in r [:state :pending])))))))
@@ -532,3 +532,22 @@
         (let [done (run (:state r) [:command {:id id}])]
           (is (= [] (sent done)) id)
           (is (= :toast (ffirst (:fx done))) id))))))
+
+(deftest a-refresh-sends-the-versions-it-holds
+  (let [s (opened "(ns a)")
+        r (run s [:focus])]
+    (is (= {:op :read :paths ["src/a.clj"] :known {"src/a.clj" "v1"}}
+           (dissoc (second (second (:fx r))) :id)))
+    (testing "an unchanged file comes back without text, and the buffer stays as it was"
+      (let [after (run (:state r) (reply-to r :ok {:files {"src/a.clj" {:version "v1"}}}))]
+        (is (= (get-in s [:buffers 1]) (get-in after [:state :buffers 1])))))))
+
+(deftest a-reply-without-text-never-loads-a-tab
+  (let [focused  (run (opened "(ns a)") [:focus])
+        ;; the tab closes and the file opens again before the focus read answers
+        reopened (run (:state focused) [:close-tab 1] [:open-file "src/a.clj"])
+        id       (first (:tabs (:state reopened)))
+        early    (run (:state reopened) (reply-to focused :ok {:files {"src/a.clj" {:version "v1"}}}))]
+    (is (get-in early [:state :buffers id :loading?]) "it still waits for its own read")
+    (let [loaded (run (:state early) (reply-to reopened :ok {:files {"src/a.clj" {:text "(ns a)" :version "v1"}}}))]
+      (is (= "(ns a)" (get-in loaded [:state :buffers id :disk-text]))))))
