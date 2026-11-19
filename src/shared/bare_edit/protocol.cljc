@@ -7,10 +7,11 @@
 
 (defn kind-for
   "The session kind for the file at `path`, or `nil` for a file that is not evaluated.
+  A `path` that is not a string, such as the settings file's `:settings`, is not evaluated.
   It is `:clj` for `.clj` and `.cljc` files and `:cljs` for `.cljs` files. A `.cljc` file
   goes to Clojure, and its reader conditionals take their `:clj` branch."
   [path]
-  (condp re-find (or path "")
+  (condp re-find (if (string? path) path "")
     #"\.cljs$"      :cljs
     #"\.cljc?$"     :clj
     nil))
@@ -46,6 +47,8 @@
    :completions {:request {:prefix :string :ns :ns}                      :reply #{:candidates}}
    :lookup      {:request {:path :string :sym :string :ns :ns}           :reply #{:info}}
    :config      {:request {}                                             :reply #{:config :problems}}
+   :read-settings {:request {}                                           :reply #{:text :version}}
+   :save-settings {:request {:text :string :version :version}            :reply #{:version}}
    :project     {:request {}                                             :reply #{:name}}})
 
 (def events

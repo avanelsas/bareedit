@@ -60,18 +60,18 @@ The look comes from one file for every project, `~/.config/bareedit/config.edn`:
 
 ```clojure
 {:theme {:preset    "ocean"                              ; a BareDOM preset
-         :font-mono "JetBrains Mono, Menlo, monospace"   ; optional
+         :font-family "JetBrains Mono, Menlo, monospace" ; optional
          :font-size 14                                   ; optional, in pixels
          :syntax    {:light {:keyword "#a626a4"}         ; optional, code colours
                      :dark  {:keyword "#c678dd" :string "#98c379"}}}}
 ```
 
 - **Preset.** One of BareDOM's presets: `default`, `ocean`, `forest`, `sunset`, `neo-brutalist`, `aurora`, `mono-ai` or `warm-mineral`. Each has light and dark colours, and the system setting picks between them.
-- **Fonts.** `:font-mono` and `:font-size` set the editor and the results column. The rest of the page keeps the preset's fonts.
+- **Fonts.** `:font-family` and `:font-size` set the editor and the results column. The rest of the page keeps the preset's fonts.
 - **Code colours.** Each preset colours code with its own syntax colours. `:syntax` changes any of them, for `:light` and `:dark` mode apart. The colours are `:comment`, `:keyword`, `:string`, `:constant`, `:function`, `:type` and `:tag`, and each takes a CSS colour. A colour set for one mode does not change the other.
 - **Defaults.** Without the file, or without a key, the preset is `default` and the fonts are the preset's.
 - **Mistakes.** A value that is wrong, or a key that is unknown, is ignored, and a warning says so when the page loads.
-- **Changes.** After editing the file, reload the page (`Mod-r`). There is no need to restart the editor.
+- **Editing.** "Open settings" in the command palette opens the file in a tab. With no file yet, the tab holds a commented example, and the first save creates the file. Saving applies the look at once. After editing the file in another editor, reload the page (`Mod-r`).
 
 ## Development
 

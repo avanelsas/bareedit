@@ -96,3 +96,18 @@
 (deftest an-operation-without-a-method
   (is (= {:id 1 :status :unavailable :message "Operation :nothing is not available yet."}
          (server/handle {} {:op :nothing :id 1}))))
+
+(deftest the-settings-file
+  (let [file (str (fs/path (fs/create-temp-dir) "new" "folder" "config.edn"))
+        ctx  {:config-file file}
+        ask  (fn [op args] (server/handle ctx (p/request op 1 args)))]
+    (testing "with no file, a file still to create"
+      (is (= {:id 1 :status :ok :text "" :version :absent} (ask :read-settings {}))))
+    (testing "the first save creates the folders and the file"
+      (let [{:keys [status version]} (ask :save-settings {:text "{}" :version :absent})]
+        (is (= :ok status))
+        (is (= "{}" (slurp file)))
+        (is (= {:id 1 :status :ok :text "{}" :version version} (ask :read-settings {})))))
+    (testing "a save from an older version is refused"
+      (is (= :conflict (:status (ask :save-settings {:text "{:theme {}}" :version :absent}))))
+      (is (= "{}" (slurp file))))))

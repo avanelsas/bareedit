@@ -297,8 +297,8 @@
   It sets `--x-font-family-mono` and `--x-font-size-base`, in pixels, only for the ones
   `config` names, and is empty otherwise. It goes on the editor and the results column,
   not on the `x-theme`, because `--x-font-size-base` sizes the whole UI."
-  [{:keys [font-mono font-size]}]
-  (str (when font-mono (str "--x-font-family-mono:" font-mono ";"))
+  [{:keys [font-family font-size]}]
+  (str (when font-family (str "--x-font-family-mono:" font-family ";"))
        (when font-size (str "--x-font-size-base:" font-size "px;"))))
 
 (defn syntax-style
@@ -334,7 +334,9 @@
         [:x-tree {:label "Files" :selection "leaf" :guides true
                   :items (tree-json paths)
                   :expanded (js/JSON.stringify (clj->js expanded))
-                  :selected (js/JSON.stringify (clj->js (if active-b [(:path active-b)] [])))
+                  :selected (js/JSON.stringify (clj->js (if (and active-b (not (model/settings? (:path active-b))))
+                                                           [(:path active-b)]
+                                                           [])))
                   :on-x-tree-toggle (fn [^js e] (dispatch [:expand (vec (.. e -detail -nextExpanded))]))
                   :on-x-tree-select (fn [^js e] (dispatch [:open-file (.. e -detail -id)]))}]]]
       [:x-split-pane {:slot "end" :class (if results-open? "inner" "inner closed")

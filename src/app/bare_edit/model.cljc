@@ -141,10 +141,19 @@
     (subs path 0 (inc i))
     ""))
 
-(defn file-name
-  "The last segment of `path`, the file's name."
+(defn settings?
+  "Whether `path` names the settings file, which is not in the project.
+  Every other path is a project-relative path, a string."
   [path]
-  (last (str/split path #"/")))
+  (= :settings path))
+
+(defn file-name
+  "The last segment of `path`, the file's name.
+  The settings file is named `config.edn`, as on disk, see [[settings?]]."
+  [path]
+  (if (settings? path)
+    "config.edn"
+    (last (str/split path #"/"))))
 
 (defn ns-of
   "The namespace named by the `ns` form in the Clojure source `text`, or `nil`.
