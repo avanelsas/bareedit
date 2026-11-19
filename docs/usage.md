@@ -34,7 +34,7 @@ In `.clj` and `.cljc` files, completions come from the REPL, with the kind and n
 
 ## Languages
 
-The file's extension decides how it is edited. Clojure files (`.clj`, `.cljs`, `.cljc`, `.edn`, `.bb`) get Clojure colours, indentation and structural editing. Markdown files (`.md`) get Markdown colours, and Enter continues a list. Any other file is plain text. The status bar names the language. Structural editing works in Clojure files only, and evaluation in `.clj`, `.cljc` and `.cljs` files.
+The file's extension decides how it is edited. Clojure files (`.clj`, `.cljs`, `.cljc`, `.edn`, `.bb`) get Clojure colours, indentation and structural editing. Markdown files (`.md`) get Markdown colours, and Enter continues a list. HTML (`.html`, `.htm`), CSS (`.css`), JSON (`.json`) and JavaScript (`.js`, `.mjs`, `.cjs`, `.jsx`) get their own colours and close their brackets, and HTML colours its `<style>` and `<script>` blocks as CSS and JavaScript. Any other file is plain text. The status bar names the language. Structural editing works in Clojure files only, and evaluation in `.clj`, `.cljc` and `.cljs` files.
 
 ## Structural editing
 

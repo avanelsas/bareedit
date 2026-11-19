@@ -118,6 +118,13 @@
     "README.md"        :markdown
     "docs/NOTES.MD"    :markdown
     "a.markdown"       :markdown
+    "public/index.html" :html
+    "page.htm"         :html
+    "app.css"          :css
+    "package.json"     :json
+    "src/main.js"      :javascript
+    "view.jsx"         :javascript
+    "lib.mjs"          :javascript
     "notes.txt"        :text
     "Makefile"         :text
     ".gitignore"       :text))
