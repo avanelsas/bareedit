@@ -10,7 +10,7 @@ A small, local, browser-based editor for Clojure and ClojureScript, with a file 
 
 ![BareEdit with a Clojure file open and two results](docs/assets/screenshot.jpg)
 
-**Status:** early and in daily use, tested on macOS. It runs on your machine only, for one user, and is not on Clojars yet.
+**Status:** early and in daily use, tested on macOS. It runs on your machine only, for one user, and is not on Clojars yet. Changes are listed in [CHANGELOG.md](CHANGELOG.md).
 
 ## Requirements
 
