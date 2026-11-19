@@ -4,6 +4,7 @@
   [[bare-edit.steps/step]]. The page reads nothing else and changes nothing, so a test can
   render it from a state value and check which event each control sends."
   (:require [bare-edit.editor :as editor]
+            [bare-edit.keys :as keymap]
             [bare-edit.model :as model]
             [bare-edit.protocol :as p]
             [bare-edit.steps :as steps]
@@ -78,15 +79,17 @@
   shows as given. The command palette holds every command it shows, and filters them itself.
   Its commands are those with a group, group by group in the order of
   [[bare-edit.steps/command-groups]], so the palette shows each group's header once; within
-  a group they keep the order of [[bare-edit.steps/commands]]."
+  a group they keep the order of [[bare-edit.steps/commands]]. A command with keys shows
+  them, see [[bare-edit.keys/shortcut]]."
   [{:keys [palette paths]}]
   (case (:kind palette)
     :files    (for [p (model/rank-paths paths (:query palette) palette-size)]
                 {:id p :label p})
-    :commands (for [{:keys [id label group]} (->> steps/commands
-                                                  (filter :group)
-                                                  (sort-by (comp steps/group-order :group)))]
-                {:id (name id) :label label :group (steps/group-labels group)})
+    :commands (for [{:keys [id label group] spec :keys} (->> steps/commands
+                                                             (filter :group)
+                                                             (sort-by (comp steps/group-order :group)))]
+                (cond-> {:id (name id) :label label :group (steps/group-labels group)}
+                  spec (assoc :shortcut (keymap/shortcut spec))))
     nil))
 
 (def palette-texts

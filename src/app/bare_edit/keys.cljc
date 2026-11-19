@@ -43,11 +43,16 @@
         k         (or physical (if (and one? (re-matches #"[A-Z]" key)) (str/lower-case key) key))]
     (canonical ev k (some? physical))))
 
+(defn- spec-parts
+  "The parts of `spec`, a `:keys` string, split on `-`. A trailing `-` is a key of its own."
+  [spec]
+  (str/split spec #"-(?!$)"))
+
 (defn spec->key
   "The canonical key for `spec`, a `:keys` string such as `\"Mod-Shift-Enter\"`.
   `Mod` means Meta when `mac?` is true and Ctrl otherwise."
   [mac? spec]
-  (let [parts (str/split spec #"-(?!$)")
+  (let [parts (spec-parts spec)
         k     (last parts)
         mods  (reduce (fn [m p] (case p
                                   "Mod"          (assoc m (if mac? :meta :ctrl) true)
@@ -55,6 +60,21 @@
                                   (assoc m (keyword (str/lower-case p)) true)))
                       {} (butlast parts))]
     (canonical mods (cond (= k "Space") " " (= 1 (count k)) (str/lower-case k) :else k) true)))
+
+(def ^:private shown-keys
+  "How a shortcut shows a key whose CodeMirror name is a word, by that name."
+  {"ArrowUp" "↑" "ArrowDown" "↓" "ArrowLeft" "←" "ArrowRight" "→"})
+
+(defn shortcut
+  "The text `x-kbd` shows for `spec`, a command's `:keys`, or `nil` when it has none.
+  `spec` is a string such as `\"Mod-Shift-Enter\"`, or a vector of them, of which the first
+  shows. The parts join with `+`, as `x-kbd` reads them, so `Mod` shows as ⌘ on macOS and
+  Ctrl elsewhere. `x-kbd` finds the platform itself, not from `mac?`. A letter shows as a
+  capital, and an arrow as its arrow."
+  [spec]
+  (when-let [spec (if (sequential? spec) (first spec) spec)]
+    (str/join "+" (for [part (spec-parts spec)]
+                    (if (= 1 (count part)) (str/upper-case part) (shown-keys part part))))))
 
 (defn key-index
   "A map from canonical key to command, for every key of every command in `commands`.
