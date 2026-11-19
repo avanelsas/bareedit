@@ -4,24 +4,62 @@
   what happens to a file changed on disk."
   (:require [clojure.string :as str]))
 
+(defn- name-pieces
+  "The runs of digits and the runs of other characters in the name `nm`, in order."
+  [nm]
+  (re-seq #"\d+|\D+" nm))
+
+(defn- digits?
+  "Whether the piece `s` is a run of digits."
+  [s]
+  (boolean (re-matches #"\d+" s)))
+
+(defn- compare-numbers
+  "Compares the runs of digits `a` and `b` by the numbers they write.
+  Leading zeros are dropped, so `\"007\"` and `\"7\"` are equal. Any length works."
+  [a b]
+  (let [value (fn [s] (let [s (str/replace s #"^0+(?=\d)" "")] [(count s) s]))]
+    (compare (value a) (value b))))
+
+(defn- compare-pieces
+  "Compares the name pieces `a` and `b`, by number when both are runs of digits.
+  Otherwise they compare as text that ignores case."
+  [a b]
+  (if (and (digits? a) (digits? b))
+    (compare-numbers a b)
+    (compare (str/lower-case a) (str/lower-case b))))
+
+(defn name-order
+  "Compares the file names `a` and `b` in the order the file tree shows them.
+  Case is ignored and runs of digits compare as numbers, so `file2` comes before `file10`
+  and `apple` before `README`. Names equal in that order compare by character code, so the
+  order is the same on every run."
+  [a b]
+  (let [pa (name-pieces a)
+        pb (name-pieces b)
+        c  (or (first (remove zero? (map compare-pieces pa pb)))
+               (compare (count pa) (count pb)))]
+    (if (zero? c) (compare a b) c)))
+
 (defn tree-items
-  "The `x-tree` items for `paths`, a flat, sorted list of project-relative file paths.
-  Folders come before files. Every item's id is its path, so a selected id is the file to
-  open."
+  "The `x-tree` items for `paths`, a list of project-relative file paths.
+  In each folder, folders come before files, each in [[name-order]]. Every item's id is its
+  path, so a selected id is the file to open."
   [paths]
   (letfn [(insert [node [part & more]]
             (if more
-              (update-in node [part :children] #(insert (or % (sorted-map)) more))
+              (update-in node [part :children] insert more)
               (assoc-in node [part :file?] true)))
           (items [prefix node]
-            (let [{folders false files true} (group-by (comp boolean :file? val) node)]
+            (let [{folders false files true} (update-vals (group-by (comp boolean :file? val) node)
+                                                          #(sort-by key name-order %))]
               (vec (concat
                     (for [[nm {:keys [children]}] folders
                           :let [id (str prefix nm)]]
                       {:id id :label nm :children (items (str id "/") children)})
                     (for [[nm _] files]
                       {:id (str prefix nm) :label nm})))))]
-    (items "" (reduce #(insert %1 (str/split %2 #"/")) (sorted-map) paths))))
+    (items "" (reduce #(insert %1 (str/split %2 #"/")) {} paths))))
 
 (defn disk-action
   "What to do with an open buffer whose file on disk now has the version `version`.
@@ -67,15 +105,17 @@
   "The best `limit` paths in `paths` for the file palette's `query`, best first.
   Every space-separated word of the query must appear in the path, ignoring case, as typed
   or with `.` as `/` and `-` as `_`. Paths rank by how their file name matches the last
-  word, then shorter first, then alphabetically. An empty query lists the shortest paths."
+  word, then shorter first, then in [[name-order]]. An empty query lists the shortest paths."
   [paths query limit]
   (let [words (remove str/blank? (str/split (str/lower-case (str/trim (or query ""))) #"\s+"))
         match? (fn [p] (let [lp (str/lower-case p)]
                          (every? #(or (str/includes? lp %) (str/includes? lp (converted %))) words)))
-        order  (if (seq words)
-                 (let [w (last words)] (fn [p] [(tier p w) (count p) p]))
-                 (fn [p] [(count p) p]))]
-    (into [] (take limit) (sort-by order (filter match? paths)))))
+        rank   (if (seq words)
+                 (let [w (last words)] (fn [p] [(tier p w) (count p)]))
+                 (fn [p] [(count p)]))
+        order  (fn [a b] (let [c (compare (rank a) (rank b))]
+                           (if (zero? c) (name-order a b) c)))]
+    (into [] (take limit) (sort order (filter match? paths)))))
 
 (defn path-problem
   "Why `path` cannot be a new file in the project, as a sentence, or `nil` when it can.

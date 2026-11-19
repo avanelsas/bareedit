@@ -11,6 +11,25 @@
           {:id "README.md" :label "README.md"}]
          (model/tree-items ["README.md" "src/a.clj" "src/foo/core.clj"]))))
 
+(deftest the-tree-orders-each-folder
+  (is (= ["Docs" "src" "apple.md" "file2.txt" "file10.txt" "README.md"]
+         (map :label (model/tree-items ["file10.txt" "src/a.clj" "README.md" "Docs/x.md"
+                                        "apple.md" "file2.txt"])))))
+
+(deftest name-order
+  (are [names] (= names (sort model/name-order (reverse names)))
+    ;; case is ignored
+    ["apple.md" "bb.edn" "README.md" "Zebra.md"]
+    ;; runs of digits compare as numbers, at any length
+    ["file2.txt" "file10.txt" "file99999999999999999999.txt" "file100000000000000000000.txt"]
+    ;; other characters keep their code order: a dot before digits, `_` after them
+    [".github" ".gitignore" "1.txt" "_notes.md" "notes.md"]
+    ;; a shorter name that the longer one starts with comes first
+    ["core" "core.clj" "core_test.clj"]
+    ;; names equal apart from case or leading zeros keep one order
+    ["README.md" "readme.md"]
+    ["file007" "file7"]))
+
 (deftest disk-action
   ;; One rule, whoever changed the file.
   (are [unsaved? known now action] (= action (model/disk-action unsaved? known now))
@@ -46,7 +65,10 @@
          (model/rank-paths ["a/bare_edit/steps/x.clj" "src/bare_edit/steps.cljs"] "bare-edit.steps" 5))
       "a namespace ranks its own file first, by the last part of its name")
   (is (= ["README.md" "src/core.cljs" "src/encore.clj"] (model/rank-paths paths "" 3))
-      "an empty query lists the shortest paths"))
+      "an empty query lists the shortest paths")
+  (is (= ["x/alfa.clj" "x/Beta.clj" "x/f2__.clj" "x/f10_.clj"]
+         (model/rank-paths ["x/f10_.clj" "x/Beta.clj" "x/f2__.clj" "x/alfa.clj"] "" 4))
+      "equal ranks keep the order of the file tree"))
 
 (deftest path-problem
   (are [path problem] (= problem (model/path-problem path))
