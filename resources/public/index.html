@@ -9,7 +9,9 @@
   #app { display: block; height: 100%; }
   .app { display: flex; flex-direction: column; height: 100%; --bar-height: 2.5rem; --brand-blue: #79bde8;
          background: var(--x-color-bg); color: var(--x-color-text);
-         font-family: var(--x-font-family, system-ui, sans-serif); }
+         font-family: var(--x-font-family, system-ui, sans-serif);
+         /* inherited, also inside the components, so every scrollbar takes the theme's colours */
+         scrollbar-color: var(--x-color-border) transparent; }
   .panes { flex: 1; min-height: 0; }
   .status-bar { flex: none; display: flex; align-items: center; gap: 1rem; height: 1.625rem;
                 padding: 0 0.75rem; border-top: 1px solid var(--x-color-border);
