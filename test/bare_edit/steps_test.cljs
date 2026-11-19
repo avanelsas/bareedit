@@ -551,3 +551,6 @@
     (is (get-in early [:state :buffers id :loading?]) "it still waits for its own read")
     (let [loaded (run (:state early) (reply-to reopened :ok {:files {"src/a.clj" {:text "(ns a)" :version "v1"}}}))]
       (is (= "(ns a)" (get-in loaded [:state :buffers id :disk-text]))))))
+
+(deftest the-page-config-is-the-look-until-the-server-answers
+  (is (= {:preset "forest"} (:config (:state (run steps/initial-state [:page-config {:preset "forest"}]))))))

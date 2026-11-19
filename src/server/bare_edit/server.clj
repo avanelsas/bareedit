@@ -194,16 +194,36 @@
   {"html" "text/html; charset=utf-8" "js" "text/javascript" "css" "text/css"
    "map" "application/json" "svg" "image/svg+xml" "png" "image/png"})
 
+(defn- attribute-text
+  "The string `s` escaped to stand as an HTML attribute value between double quotes."
+  [s]
+  (str/escape s {\& "&amp;" \< "&lt;" \> "&gt;" \" "&quot;" \' "&#39;"}))
+
+(defn page-with-config
+  "The page `html` with the look and feel `config` on its `html` element, as `data-config`.
+  The value is `config` as EDN, so the page can show the user's look before it connects."
+  [html config]
+  (str/replace-first html "<html" (str "<html data-config=\"" (attribute-text (pr-str config)) "\"")))
+
 (defn- static
   "The response for the file `uri` names under `public/` on the classpath, or `nil`.
-  `/` serves `index.html`. Responses are never cached, so a rebuilt page always loads."
+  Responses are never cached, so a rebuilt page always loads."
   [uri]
-  (let [path (if (= uri "/") "index.html" (subs uri 1))]
+  (let [path (subs uri 1)]
     (when-let [res (and (not (str/includes? path "..")) (io/resource (str "public/" path)))]
       {:status 200
        :headers {"Content-Type" (get content-types (last (str/split path #"\.")) "application/octet-stream")
                  "Cache-Control" "no-store"}
        :body (io/input-stream res)})))
+
+(defn- page-response
+  "The response for the page, `index.html` with the look and feel of the file `config-file`.
+  See [[page-with-config]]. It is never cached, so a changed look loads."
+  [config-file]
+  {:status 200
+   :headers {"Content-Type" (get content-types "html") "Cache-Control" "no-store"}
+   :body (page-with-config (slurp (io/resource "public/index.html"))
+                           (:config (config/check (config/read-file config-file))))})
 
 ;; ── Pages ───────────────────────────────────────────────────────────────────
 
@@ -262,6 +282,7 @@
   (fn [{:keys [uri request-method] :as req}]
     (cond
       (= uri "/ws")              (ws-handler @ctx req)
+      (= uri "/")                (page-response (:config-file @ctx))
       (= request-method :get)    (or (static uri) {:status 404 :body "Not found"})
       :else                      {:status 405 :body "Method not allowed"})))
 

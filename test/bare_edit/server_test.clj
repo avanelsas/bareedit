@@ -5,6 +5,7 @@
             [babashka.fs :as fs]
             [babashka.http-client :as http]
             [babashka.http-client.websocket :as ws]
+            [clojure.string :as str]
             [clojure.test :refer [deftest is testing use-fixtures]]))
 
 (def ^:dynamic *srv*
@@ -37,9 +38,15 @@
   (some-> (.poll inbox 3 java.util.concurrent.TimeUnit/SECONDS) p/decode))
 
 (deftest page-is-served
+  (spit (:config-file *srv*) "{:theme {:preset \"ocean\"}}")
   (let [resp (http/get (str "http://127.0.0.1:" (:port *srv*) "/") {:throw false})]
     (is (= 200 (:status resp)))
-    (is (re-find #"BareEdit" (:body resp)))))
+    (is (re-find #"BareEdit" (:body resp)))
+    (testing "the page carries the look and feel, so it shows before the page connects"
+      (is (str/includes? (:body resp) "<html data-config=\"{:preset &quot;ocean&quot;}\""))))
+  (testing "a value is escaped as an attribute"
+    (is (= "<html data-config=\"{:font-family &quot;&lt;/x&gt; &amp; &#39;y&#39;&quot;}\" lang=\"en\">"
+           (server/page-with-config "<html lang=\"en\">" {:font-family "</x> & 'y'"})))))
 
 (deftest only-on-loopback
   (is (re-find #"^http://127\.0\.0\.1:\d+/\?token=[0-9a-f]{48}$" (:url *srv*))))
