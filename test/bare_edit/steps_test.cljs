@@ -3,6 +3,7 @@
   (:require ["@codemirror/commands" :refer [undo]]
             [bare-edit.editor :as editor]
             [bare-edit.protocol :as p]
+            [bare-edit.settings :as settings]
             [bare-edit.steps :as steps]
             [clojure.test :refer [deftest is testing]]))
 
@@ -474,3 +475,60 @@
 (deftest every-group-is-known
   (doseq [{:keys [id group]} steps/commands :when group]
     (is (contains? steps/group-order group) (str id " has a known group"))))
+
+(deftest unreadable-folders-are-told-once
+  (let [r     (run connected [:command {:id :refresh-file-tree}])
+        reply (fn [r folders] (run (:state r) (reply-to r :ok {:paths ["src/a.clj"] :unreadable folders})))
+        once  (reply r ["Library" "locked"])]
+    (is (= ["Library" "locked"] (get-in once [:state :unreadable])))
+    (is (= [[:toast :warning "Could not read 2 folders: Library, locked. They are left out of the file tree."]]
+           (filter #(= :toast (first %)) (:fx once))))
+    (testing "the same folders again show no toast"
+      (let [again (reply (run (:state once) [:command {:id :refresh-file-tree}]) ["Library" "locked"])]
+        (is (not-any? #(= :toast (first %)) (:fx again)))))
+    (testing "no unreadable folders show no toast"
+      (is (not-any? #(= :toast (first %)) (:fx (reply r [])))))))
+
+(deftest unreadable-text
+  (is (= "Could not read the folder Desktop. It is left out of the file tree."
+         (steps/unreadable-text ["Desktop"])))
+  (is (= "Could not read 5 folders: a, b, c and 2 more. They are left out of the file tree."
+         (steps/unreadable-text ["a" "b" "c" "d" "e"])))
+  (is (= "Could not read the project folder." (steps/unreadable-text ["."]))))
+
+(defn- settings-open
+  "The result of opening the settings tab from the [[connected]] state, read with `disk`."
+  [disk]
+  (let [r (run connected [:command {:id :open-settings}])]
+    (run (:state r) (reply-to r :ok disk))))
+
+(defn- sent
+  "The requests the result `r` sends, without their ids."
+  [r]
+  (for [[kind req] (:fx r) :when (= :send kind)] (dissoc req :id)))
+
+(deftest the-settings-tab
+  (testing "opening asks for the settings file, not a project file"
+    (is (= [{:op :read-settings}] (sent (run connected [:command {:id :open-settings}])))))
+  (testing "with no file, the tab holds every setting, as a file still to create"
+    (let [b (get-in (settings-open {:text "" :version :absent}) [:state :buffers 1])]
+      (is (= [:settings (settings/default-text) :absent] [(:path b) (:disk-text b) (:disk-version b)]))))
+  (let [r (settings-open {:text "{}" :version "v0"})
+        b (get-in r [:state :buffers 1])]
+    (testing "with a file, the tab holds its text"
+      (is (= [:settings "{}" "v0"] [(:path b) (:disk-text b) (:disk-version b)])))
+    (testing "saving sends the text with the version it was read with"
+      (is (= [{:op :save-settings :text "{}" :version "v0"}]
+             (sent (run (:state r) [:command {:id :save}])))))
+    (testing "a saved file asks for the look again, and not for the path list"
+      (let [saving (run (:state r) [:command {:id :save}])
+            saved  (run (:state saving) (reply-to saving :ok {:version "v1"}))]
+        (is (= "v1" (get-in saved [:state :buffers 1 :disk-version])))
+        (is (= [{:op :config}] (sent saved)))))
+    (testing "the focus reads it again with the path list"
+      (is (= [{:op :paths} {:op :read-settings}] (sent (run (:state r) [:focus])))))
+    (testing "rename and evaluation refuse it with a toast"
+      (doseq [id [:rename-file :eval-form :eval-top-form :eval-file :show-docs]]
+        (let [done (run (:state r) [:command {:id id}])]
+          (is (= [] (sent done)) id)
+          (is (= :toast (ffirst (:fx done))) id))))))

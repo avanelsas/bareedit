@@ -58,8 +58,8 @@
       ((:on-x-tree-select (second (first (elements h :x-tree)))) #js {:detail #js {:id "src/b.clj"}})
       (is (= [[:open-file "src/b.clj"]] @events)))
     (testing "the editor shows the active buffer, and hides while the active one loads"
-      (is (= "" (editor-style h)))
-      (is (= "display:none" (editor-style (render (assoc state :active 2) events)))))))
+      (is (= "--x-font-size-base:medium;" (editor-style h)))
+      (is (= "--x-font-size-base:medium;display:none" (editor-style (render (assoc state :active 2) events)))))))
 
 (deftest question-dialogs
   (testing "no question, no dialog"
@@ -158,12 +158,12 @@
       (is (= "100" (some #(when (= "inner closed" (:class (second %))) (:position (second %)))
                          (elements closed-h :x-split-pane))))
       (testing "and the editor stays on the page either way"
-        (is (= "" (editor-style closed-h)))))))
+        (is (= "--x-font-size-base:medium;" (editor-style closed-h)))))))
 
 (deftest the-look-and-feel
   (testing "the x-theme picks its own preset until the look and feel arrives"
     (is (nil? (:preset (second (render state (atom [])))))))
-  (let [h (render (assoc state :config {:preset "ocean" :font-mono "Menlo, monospace" :font-size 14}) (atom []))]
+  (let [h (render (assoc state :config {:preset "ocean" :font-family "Menlo, monospace" :font-size 14}) (atom []))]
     (testing "then it is the user's"
       (is (= "ocean" (:preset (second h)))))
     (testing "the fonts go on the editor and the results column only"
@@ -171,8 +171,14 @@
       (is (= (editor-style h) (some #(when (= "results-pane" (:class (second %))) (:style (second %)))
                                     (elements h :div))))
       (is (nil? (:style (second h)))))
-    (testing "a font the file does not name is not set"
-      (is (= "--x-font-size-base:12px;" (page/font-style {:font-size 12}))))))
+    (testing "a font the file does not name is not set, and code without a size takes the browser's"
+      (is (= "--x-font-size-base:12px;" (page/font-style {:font-size 12})))
+      (is (= "--x-font-size-base:medium;" (page/font-style {}))))))
+
+(deftest the-interface-size
+  (is (= "18px" (page/root-font-size {:ui-font-size 18})))
+  (is (= "" (page/root-font-size {})))
+  (is (= "" (page/root-font-size nil))))
 
 (deftest the-status-bar
   (let [events (atom [])

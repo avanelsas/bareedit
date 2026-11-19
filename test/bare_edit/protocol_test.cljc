@@ -22,7 +22,7 @@
 
 (deftest reply-problems
   (are [op msg ok?] (= ok? (nil? (p/reply-problems op msg)))
-    :paths {:id 1 :status :ok :paths []}                   true
+    :paths {:id 1 :status :ok :paths [] :unreadable []}    true
     :paths {:id 1 :status :ok}                             false
     :save  {:id 1 :status :conflict :message "Changed on disk."} true
     :save  {:id 1 :status :conflict}                       false

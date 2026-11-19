@@ -35,6 +35,25 @@
   (let [{:keys [config problems]} (config/check (config/read-file config-file))]
     (p/reply id :ok {:config config :problems (mapv config/problem-text problems)})))
 
+(defn- settings-place
+  "The folder and the name of the settings file `config-file`, as `[folder name]`."
+  [config-file]
+  [(str (fs/parent config-file)) (str (fs/file-name config-file))])
+
+(defmethod handle :read-settings [{:keys [config-file]} {:keys [id]}]
+  (p/reply id :ok (if (fs/regular-file? config-file)
+                    (apply files/read-file (settings-place config-file))
+                    {:text "" :version :absent})))
+
+(defmethod handle :save-settings [{:keys [config-file]} {:keys [id text version]}]
+  (let [[folder nm] (settings-place config-file)]
+    (fs/create-dirs folder)
+    (let [{:keys [conflict] new-version :version} (files/save! folder nm text version)]
+      (if new-version
+        (p/reply id :ok {:version new-version})
+        (p/failure id :conflict (str "The settings file changed on disk since it was loaded."
+                                     (when (= :absent conflict) " It no longer exists.")))))))
+
 (defmethod handle :rename [{:keys [root]} {:keys [id from to version]}]
   (if-let [bad (outside root [from to])]
     (p/failure id :error (str "Not a file in this project: " bad))
@@ -49,7 +68,7 @@
   (p/reply id :ok {:name (str (fs/file-name root))}))
 
 (defmethod handle :paths [{:keys [root]} {:keys [id]}]
-  (p/reply id :ok {:paths (files/path-list root)}))
+  (p/reply id :ok (select-keys (files/listing root) [:paths :unreadable])))
 
 (defmethod handle :read [{:keys [root]} {:keys [id] rels :paths}]
   (if-let [bad (outside root rels)]

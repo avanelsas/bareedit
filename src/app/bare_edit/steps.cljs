@@ -14,21 +14,25 @@
   never touches the atom, the socket or the page."
   (:require [bare-edit.editor :as editor]
             [bare-edit.model :as model]
-            [bare-edit.protocol :as p]))
+            [bare-edit.protocol :as p]
+            [bare-edit.settings :as settings]
+            [clojure.string :as str]))
 
 (def initial-state
   "The state when the page loads, before the connection opens.
   `:next-id` numbers requests, unique within the page, and `:next-buffer` numbers buffers.
   `:pending` maps a request id to its request until the reply arrives. `:buffers` maps a
-  buffer id to its buffer, and `:tabs` holds buffer ids in order. `:questions` is the
+  buffer id to its buffer, and `:tabs` holds buffer ids in order. A buffer's `:path` is a
+  project path, or `:settings` for the settings file. `:questions` is the
   queue of open questions; the page shows the first, see [[ask]]. `:palette` is the open
   palette, `{:kind :query}` with `:kind` `:files` or `:commands`, or `nil`. `:results`
   holds the entries of the results column, newest first, see [[add-entry]].
   `:results-open?` says whether the column shows, and `:unfolded` holds the ids of the
   entries shown in full. `:conn` is `:connecting`, `:open` or `:closed`. `:config` is the
-  user's look and feel, `{:preset :font-mono :font-size}` from the server, or `nil` until
+  user's look and feel, `{:preset :font-family :font-size}` from the server, or `nil` until
   it arrives, and `:project` the project folder's name, the same way. `:repl` holds the
-  last thing heard from the REPL of each session kind, see [[record-repl]]."
+  last thing heard from the REPL of each session kind, see [[record-repl]]. `:unreadable`
+  holds the folders the last path list could not read."
   {:conn :connecting
    :config nil
    :project nil
@@ -37,6 +41,7 @@
    :next-buffer 1
    :pending {}
    :paths []
+   :unreadable []
    :expanded []
    :buffers {}
    :tabs []
@@ -274,6 +279,18 @@
   (let [b (get-in s [:buffers (:active s)])]
     (when (:state b) b)))
 
+(def ^:private settings-refusal
+  "The toast for a command that works on project files only, run on the settings file."
+  [:toast :info "The settings file is not in the project, so it is not renamed or evaluated."])
+
+(defn- project-only
+  "Returns the result `r` after `f`, or with a toast when the active tab is the settings file.
+  It guards the commands that work on project files only: rename and evaluation."
+  [{s :state :as r} f]
+  (if (model/settings? (:path (active-buffer s)))
+    (update r :fx conj settings-refusal)
+    (f r)))
+
 (defn evaluate
   "Returns the result `r` with the form that `form-at` finds in the active buffer evaluated.
   `form-at` is a function from an `EditorState` to `{:code :line}` or `nil`, such as
@@ -299,6 +316,16 @@
 
 ;; ── Actions shared by several events ────────────────────────────────────────
 
+(defn read-paths
+  "Returns the result `r` with reads of `paths` to send.
+  The project files go in one `:read`, and `:settings`, the settings file, goes in a
+  `:read-settings`, since it is not in the project."
+  [r paths]
+  (let [{settings true files false} (group-by model/settings? paths)]
+    (cond-> r
+      (seq files)    (send :read {:paths (vec files)})
+      (seq settings) (send :read-settings {}))))
+
 (defn refresh
   "Returns the result `r` with requests for the path list and the open files from disk.
   Every open file is read in one request, so changes made outside the editor show. This
@@ -309,12 +336,13 @@
     r
     (let [paths (->> (vals (:buffers s)) (remove :loading?) (map :path) distinct vec)]
       (cond-> (send r :paths {})
-        (seq paths) (send :read {:paths paths})))))
+        (seq paths) (read-paths paths)))))
 
 (defn save-buffer
   "Returns the result `r` with a save of the buffer `id` to send.
   `then` is what to do once the save succeeds, such as `[:close-tab id]`, kept with the
-  pending request as `:then`, see [[send]]. A save of a [[busy?]] file is refused with a
+  pending request as `:then`, see [[send]]. The settings file is saved with
+  `:save-settings`, and its pending request keeps `:path :settings`. A save of a [[busy?]] file is refused with a
   toast, and its `then` is dropped with it. A missing or loading buffer leaves `r`
   unchanged."
   ([r id] (save-buffer r id nil))
@@ -323,6 +351,8 @@
      (cond
        (or (nil? b) (:loading? b)) r
        (busy? s (:path b))         (busy-toast r (:path b))
+       (model/settings? (:path b)) (send r :save-settings {:text (buffer-text b) :version (:disk-version b)}
+                                         (cond-> {:path :settings} then (assoc :then then)))
        :else (send r :save {:path (:path b) :text (buffer-text b) :version (:disk-version b)}
                    (when then {:then then}))))))
 
@@ -354,7 +384,8 @@
    {:id :repl      :label "REPL"}
    {:id :results   :label "Results"}
    {:id :edit      :label "Edit"}
-   {:id :structure :label "Structure"}])
+   {:id :structure :label "Structure"}
+   {:id :settings  :label "Settings"}])
 
 (def group-labels
   "The header of each group in [[command-groups]], by its id."
@@ -403,6 +434,7 @@
    {:id :kill              :group :structure :label "Kill to end of form"     :keys "Ctrl-k"          :scope :editor}
    {:id :expand-selection  :group :structure :label "Expand selection"        :keys "Alt-ArrowUp"     :scope :editor}
    {:id :shrink-selection  :group :structure :label "Shrink selection"        :keys "Alt-ArrowDown"   :scope :editor}
+   {:id :open-settings     :group :settings  :label "Open settings"}
    {:id :command-palette   :label "Show all commands" :keys ["Mod-Shift-p" "F1"]}
    {:id :close-palette     :label "Close the palette" :keys "Escape"}])
 
@@ -459,31 +491,35 @@
   (change r ask {:kind :new-file
                  :path (model/folder-of (get-in s [:buffers (:active s) :path]))}))
 
-(defmethod run-command :rename-file [{s :state :as r} _]
-  (if-let [{:keys [id path]} (active-buffer s)]
-    (change r ask {:kind :rename :buffer id :path path})
-    r))
+(defmethod run-command :rename-file [r _]
+  (project-only r (fn [{s :state :as r}]
+                    (if-let [{:keys [id path]} (active-buffer s)]
+                      (change r ask {:kind :rename :buffer id :path path})
+                      r))))
 
 (defmethod run-command :refresh-file-tree [r _] (send r :paths {}))
 
-(defmethod run-command :eval-form      [r _] (evaluate r editor/form-at))
-(defmethod run-command :eval-top-form  [r _] (evaluate r editor/top-level-form-at))
+(defmethod run-command :eval-form      [r _] (project-only r #(evaluate % editor/form-at)))
+(defmethod run-command :eval-top-form  [r _] (project-only r #(evaluate % editor/top-level-form-at)))
 (defmethod run-command :interrupt      [r _] (interrupt r (newest-running (:state r))))
 (defmethod run-command :clear-results  [r _] (change r assoc :results [] :unfolded #{}))
 (defmethod run-command :toggle-results [r _] (change r update :results-open? not))
 
-(defmethod run-command :eval-file [{s :state :as r} _]
-  (if-let [{:keys [path state]} (active-buffer s)]
-    (send-with-entry r :load-file {:path path :text (editor/text state)}
-                     {:kind :eval :path path :line 1 :form (str "(load-file \"" path "\")")})
-    r))
+(defmethod run-command :eval-file [r _]
+  (project-only r (fn [{s :state :as r}]
+                    (if-let [{:keys [path state]} (active-buffer s)]
+                      (send-with-entry r :load-file {:path path :text (editor/text state)}
+                                       {:kind :eval :path path :line 1
+                                        :form (str "(load-file \"" path "\")")})
+                      r))))
 
-(defmethod run-command :show-docs [{s :state :as r} _]
-  (let [{:keys [path state]} (active-buffer s)]
-    (if-let [sym (some-> state editor/symbol-at)]
-      (send-with-entry r :lookup {:path path :sym sym :ns (model/ns-of (editor/text state))}
-                       {:kind :doc :path path :sym sym})
-      r)))
+(defmethod run-command :show-docs [r _]
+  (project-only r (fn [{s :state :as r}]
+                    (let [{:keys [path state]} (active-buffer s)]
+                      (if-let [sym (some-> state editor/symbol-at)]
+                        (send-with-entry r :lookup {:path path :sym sym :ns (model/ns-of (editor/text state))}
+                                         {:kind :doc :path path :sym sym})
+                        r)))))
 
 ;; ── Replies ─────────────────────────────────────────────────────────────────
 
@@ -494,7 +530,8 @@
   `:save` records the sent text as the disk text and runs the request's `:then`
   (`[:close-tab id]` closes the tab, asking again if it has unsaved changes by then), and a
   save that created the file asks for the path list again. It reads the file again on
-  `:conflict`. An `:eval`, `:load-file` or `:lookup` reply fills in its results entry,
+  `:conflict`. `:read-settings` and `:save-settings` do the same for the settings file, and
+  a saved settings file asks for `:config` again. An `:eval`, `:load-file` or `:lookup` reply fills in its results entry,
   whatever its status. A `:completions` reply answers the editor's request with the
   candidates, or with `nil` when it is not `:ok`. A `:config` reply stores the look and
   feel and shows each problem as a warning toast. An `:interrupt` reply shows its message,
@@ -512,23 +549,50 @@
 (defmethod on-reply :project [r _req {:keys [status name]}]
   (cond-> r (= :ok status) (change assoc :project name)))
 
-(defmethod on-reply :paths [r _req {:keys [status paths message]}]
+(defn unreadable-text
+  "The message for `folders`, the project-relative folders the path list could not read.
+  It names at most three, and `\".\"` is the project folder itself."
+  [folders]
+  (let [n     (count folders)
+        shown (take 3 folders)
+        more  (- n (count shown))]
+    (if (= ["."] folders)
+      "Could not read the project folder."
+      (str "Could not read " (if (= 1 n) "the folder " (str n " folders: "))
+           (str/join ", " shown) (when (pos? more) (str " and " more " more")) ". "
+           (if (= 1 n) "It is" "They are") " left out of the file tree."))))
+
+(defmethod on-reply :paths [r _req {:keys [status paths unreadable message]}]
   (if (= :ok status)
-    (change r assoc :paths paths)
+    (cond-> (change r assoc :paths paths :unreadable unreadable)
+      (and (seq unreadable) (not= unreadable (get-in r [:state :unreadable])))
+      (toast :warning (unreadable-text unreadable)))
     (toast r :error message)))
 
-(defmethod on-reply :read [r {:keys [paths]} {:keys [status files message]}]
+(defn- disk-read
+  "Returns the result `r` after a read of `paths` from disk, with `status` and `message`.
+  When it is `:ok`, `files` maps each path to `{:text :version}`, and each open buffer of a
+  path takes its disk value. Otherwise the tabs still loading one of `paths` close, since
+  they would wait forever, and a toast shows `message`."
+  [r paths status files message]
   (if (= :ok status)
     (change r (fn [s] (reduce (fn [s [path disk]]
                                 (reduce #(apply-disk %1 %2 disk) s (buffer-ids-for s path)))
                               s files)))
-    ;; a tab still waiting for this read would wait forever, so it closes
     (-> r
         (change (fn [s] (reduce close-buffer s (for [path paths
                                                      id   (buffer-ids-for s path)
                                                      :when (get-in s [:buffers id :loading?])]
                                                  id))))
         (toast :error message))))
+
+(defmethod on-reply :read [r {:keys [paths]} {:keys [status files message]}]
+  (disk-read r paths status files message))
+
+(defmethod on-reply :read-settings [r _req {:keys [status text version message]}]
+  ;; a file still to create shows every setting with the default preset's value
+  (let [text (if (= :absent version) (settings/default-text) text)]
+    (disk-read r [:settings] status {:settings {:text text :version version}} message)))
 
 (defn- fill-entry
   "Returns the result `r` with `reply` merged into the results entry of the same id."
@@ -562,8 +626,13 @@
     :conflict (-> r (toast :error message) (send :read {:paths [from]}))
     (toast r :error message)))
 
-(defmethod on-reply :save [r {:keys [path text then] sent-version :version}
-                           {:keys [status version message]}]
+(defn- saved
+  "Returns the result `r` after a save of `text` to `path`, sent with the version `sent-version`.
+  `then` is the save's follow-up, and `status`, `version` and `message` come from the reply.
+  The disk text of each buffer of `path` becomes `text`, a new project file adds itself to
+  the path list, and `[:close-tab id]` closes that tab. A conflict reads the file again,
+  which then asks whether to keep the buffer or take the disk."
+  [r {:keys [path text then] sent-version :version} {:keys [status version message]}]
   (case status
     ;; the disk now holds the text that was sent, which may differ from the buffer's text
     :ok       (let [[follow-up id] then
@@ -572,11 +641,18 @@
                                                 s (buffer-ids-for s path))))]
                 (cond-> r
                   ;; a save that created the file adds it to the path list
-                  (= :absent sent-version) (send :paths {})
+                  (and (= :absent sent-version) (not (model/settings? path))) (send :paths {})
                   ;; through close-tab, which asks again if text was typed after the save went out
                   (= :close-tab follow-up) (close-tab id)))
-    :conflict (send r :read {:paths [path]})       ; the read then asks "keep mine or take disk"
+    :conflict (read-paths r [path])
     (toast r :error message)))
+
+(defmethod on-reply :save [r req reply] (saved r req reply))
+
+(defmethod on-reply :save-settings [r req {:keys [status] :as reply}]
+  ;; a saved settings file changes the look at once
+  (cond-> (saved r req reply)
+    (= :ok status) (send :config {})))
 
 ;; ── Events ──────────────────────────────────────────────────────────────────
 
@@ -667,7 +743,9 @@
     (change r assoc :active id)
     (-> r
         (change add-buffer {:path path :loading? true})
-        (send :read {:paths [path]}))))
+        (read-paths [path]))))
+
+(defmethod run-command :open-settings [r _] (open-path r :settings))
 
 (defmethod step :open-file [{s :state :as r} [_ path]]
   (if (some #{path} (:paths s))

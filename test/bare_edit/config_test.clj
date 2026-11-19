@@ -9,20 +9,28 @@
       (is (= {:config {:preset "default"} :problems []} (config/check text))))))
 
 (deftest valid-values
-  (is (= {:config {:preset "ocean" :font-mono "JetBrains Mono, monospace" :font-size 14} :problems []}
-         (config/check "{:theme {:preset \"ocean\" :font-mono \"JetBrains Mono, monospace\" :font-size 14}}"))))
+  (is (= {:config {:preset "ocean" :font-family "JetBrains Mono, monospace" :font-size 14} :problems []}
+         (config/check "{:theme {:preset \"ocean\" :font-family \"JetBrains Mono, monospace\" :font-size 14}}")))
+  (is (= {:preset "default" :ui-font-size 18} (:config (config/check "{:theme {:ui-font-size 18}}")))))
+
+(deftest the-interface-size-has-a-range
+  (doseq [size [11 25 "16"]]
+    (is (= [{:problem :invalid :path [:theme :ui-font-size] :value size
+             :must "a number of pixels from 12 to 24, such as 16"}]
+           (:problems (config/check (str "{:theme {:ui-font-size " (pr-str size) "}}"))))
+        (pr-str size))))
 
 (deftest wrong-values-fall-back-one-by-one
   (is (= {:config   {:preset "default"}
           :problems [{:problem :unknown-key :path [:theem]}
-                     {:problem :invalid :path [:theme :font-mono] :value "a; b"
+                     {:problem :invalid :path [:theme :font-family] :value "a; b"
                       :must "a list of fonts, such as \"Menlo, monospace\""}
                      {:problem :invalid :path [:theme :font-size] :value "14" :must "a number of pixels, such as 14"}
                      {:problem :unknown-key :path [:theme :fontsize]}
                      {:problem :invalid :path [:theme :preset] :value "oceen"
                       :must (str "one of \"aurora\", \"default\", \"forest\", \"mono-ai\", \"neo-brutalist\", "
                                  "\"ocean\", \"sunset\", \"warm-mineral\"")}]}
-         (config/check "{:theme {:preset \"oceen\" :font-mono \"a; b\" :font-size \"14\" :fontsize 3} :theem 1}")))
+         (config/check "{:theme {:preset \"oceen\" :font-family \"a; b\" :font-size \"14\" :fontsize 3} :theem 1}")))
   (testing "a good value stays when another is wrong"
     (is (= {:preset "forest"} (:config (config/check "{:theme {:preset \"forest\" :font-size -1}}"))))))
 
@@ -59,3 +67,4 @@
     "Ignored the unknown key :strng under :theme :syntax :dark in config.edn."
     {:problem :invalid :path [:theme :font-size] :value "14" :must "a number of pixels, such as 14"}
     "Ignored :theme :font-size \"14\" in config.edn: it must be a number of pixels, such as 14."))
+
