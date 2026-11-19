@@ -677,6 +677,7 @@
 
   - `[:connected]` and `[:disconnected]` follow the WebSocket.
   - `[:focus]` refreshes the path list and the open files.
+  - `[:page-config config]` stores the look and feel the page was served with.
   - `[:message text]` handles a message from the server.
   - `[:open-file path]` opens a file from the tree, or switches to its tab.
   - `[:select-tab id]` makes a tab active.
@@ -724,6 +725,9 @@
                                                                     :message "Disconnected before the reply came."))
                                                           rs))))))
       (toast :error "Disconnected from bareedit. Restart it to keep editing.")))
+
+(defmethod step :page-config [r [_ config]]
+  (change r assoc :config config))
 
 (defmethod step :focus [r _]
   (refresh r))

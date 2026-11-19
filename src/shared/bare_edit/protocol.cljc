@@ -26,6 +26,10 @@
   "The sizes `:ui-font-size` may take, in pixels, from `:min` to `:max`."
   {:min 12 :max 24})
 
+(def ruler-columns
+  "The columns `:ruler` may take, from `:min` to `:max`, and the column it has by `:default`."
+  {:min 40 :max 200 :default 80})
+
 (def statuses
   "The closed set of reply statuses. A `:running` status exists only in the browser."
   #{:ok :error :conflict :interrupted :no-runtime :unavailable})

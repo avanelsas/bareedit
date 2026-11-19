@@ -190,9 +190,16 @@
     (set! (.-onmessage ws) (fn [e] (dispatch! [:message (.-data e)])))
     (reset! socket ws)))
 
+(defn- page-config
+  "The look and feel the server put on the page's `html` element, or `nil` when there is none."
+  []
+  (let [cfg (some-> (.getAttribute js/document.documentElement "data-config") p/decode)]
+    (when (map? cfg) cfg)))
+
 (defn init
   "Starts the app and connects to the server.
-  It registers the components, renders the page, mounts the editor and renders again on
+  It takes the look and feel from the page, so the first render already shows it, see
+  [[page-config]]. It registers the components, renders the page, mounts the editor and renders again on
   every state change. It listens for keys, for window focus, and for leaving the page,
   which warns while a buffer has unsaved changes. An effect kind without a method is
   reported on the console."
@@ -200,6 +207,7 @@
   (doseq [k steps/effect-kinds :when (nil? (get-method run-effect! k))]
     (js/console.error "run-effect! has no method for" (str k)))
   (register-components!)
+  (when-let [cfg (page-config)] (dispatch! [:page-config cfg]))
   (let [app (js/document.getElementById "app")]
     (show! app @state)
     (swap! editor-view assoc :view (editor/mount! (js/document.getElementById "editor")

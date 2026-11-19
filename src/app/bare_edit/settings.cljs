@@ -92,6 +92,10 @@
         (str "  ;; browser's default, normally " browser-px ". Code keeps its own :font-size.")
         (str "  ;; :ui-font-size " browser-px)
         ""
+        (str "  ;; The column of the guide line in the editor, from " (:min p/ruler-columns)
+             " to " (:max p/ruler-columns) ", or false for none.")
+        (str "  ;; :ruler " (:default p/ruler-columns))
+        ""
         "  ;; The font of the editor and the results."
         (str "  ;; :font-family " (pr-str font-family))]
        (when font-size [(str "  ;; :font-size   " font-size)])
