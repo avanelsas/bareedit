@@ -5,13 +5,35 @@
   (:require [bare-edit.server :as server]
             [babashka.cli :as cli]
             [babashka.fs :as fs]
-            [babashka.process :as process]))
+            [babashka.process :as process]
+            [clojure.java.io :as io]
+            [clojure.string :as str]))
 
 (def cli-spec
   "The command-line options."
   {:build   {:desc "The shadow-cljs build to evaluate ClojureScript in, when several run"
-             :coerce :keyword}
-   :no-open {:desc "Do not open the browser" :coerce :boolean}})
+             :ref "<name>" :coerce :keyword}
+   :no-open {:desc "Do not open the browser" :coerce :boolean}
+   :version {:alias :v :desc "Print the version and stop" :coerce :boolean}
+   :help    {:alias :h :desc "Print this help and stop" :coerce :boolean}})
+
+(def usage
+  "The help text: how to call the command, and its options."
+  (str "Usage: bareedit [options] [folder]\n\n"
+       "Starts BareEdit for the folder, or for the current folder.\n\n"
+       "Options:\n"
+       (cli/format-opts {:spec cli-spec :order [:build :no-open :version :help]})))
+
+(defn parse-command
+  "The command-line arguments `args` read against [[cli-spec]], as `{:opts :args}`.
+  An option the spec does not name gives `{:problem :unknown-option :option name}` instead."
+  [args]
+  (try (cli/parse-args args {:spec cli-spec :restrict true})
+       (catch clojure.lang.ExceptionInfo e
+         (let [{:keys [cause option]} (ex-data e)]
+           (if (= :restrict cause)
+             {:problem :unknown-option :option option}
+             (throw e))))))
 
 (defn project-root
   "The project folder for the command-line arguments `args`, read against the folder `cwd`.
@@ -29,11 +51,57 @@
 
 (defn problem-text
   "The message for `problem`, a problem from [[project-root]]."
-  [{:keys [problem path] n :count}]
+  [{:keys [problem path option] n :count}]
   (case problem
-    :too-many     (str "Give one project folder, not " n ".")
-    :missing      (str "No such folder: " path)
-    :not-a-folder (str "Not a folder: " path)))
+    :too-many       (str "Give one project folder, not " n ".")
+    :missing        (str "No such folder: " path)
+    :not-a-folder   (str "Not a folder: " path)
+    :unknown-option (str "Unknown option " (if (= 1 (count (name option))) "-" "--") (name option)
+                         ". Run bareedit --help to see the options.")))
+
+(defn- source-root
+  "The folder of BareEdit's source code, when it runs from one, else `nil`.
+  It is found from this namespace's file, `src/server/bare_edit/main.clj` in that folder."
+  []
+  (let [url (str (io/resource "bare_edit/main.clj"))]
+    (when (str/starts-with? url "file:")
+      (-> (fs/path (java.net.URI. url)) fs/parent fs/parent fs/parent fs/parent))))
+
+(defn- git-version
+  "The version of the git checkout at the folder `root`, as `describe (date)`, or `nil`.
+  `describe` is the nearest tag, or the short commit when there is none."
+  [root]
+  (let [git (fn [& words] (let [{:keys [exit out]} (apply process/shell {:dir (str root) :out :string
+                                                                         :err :string :continue true}
+                                                          "git" words)]
+                            (when (zero? exit) (str/trim out))))]
+    (when-let [described (git "describe" "--tags" "--always")]
+      (str described " (" (git "log" "-1" "--format=%cs") ")"))))
+
+(defn version
+  "BareEdit's version, as the command prints it.
+  It is the one a release build put in `bare_edit/version.txt`, else the git version of the
+  source folder it runs from, else `\"unknown\"`."
+  []
+  (or (some-> (io/resource "bare_edit/version.txt") slurp str/trim not-empty)
+      (some-> (source-root) git-version)
+      "unknown"))
+
+(defn action
+  "What the command does with the arguments `args`, run in the folder `cwd`, as a value.
+  It is `{:action :fail :text text}`, `{:action :help}`, `{:action :version}`, or
+  `{:action :start :root root :opts opts}`. An unknown option fails first. `--help` and
+  `--version` come before the folder, which is checked only to start, see [[project-root]]."
+  [cwd args]
+  (let [{:keys [opts args problem] :as parsed} (parse-command args)]
+    (cond
+      problem         {:action :fail :text (problem-text parsed)}
+      (:help opts)    {:action :help}
+      (:version opts) {:action :version}
+      :else           (let [{:keys [root problem] :as chosen} (project-root cwd args)]
+                        (if problem
+                          {:action :fail :text (problem-text chosen)}
+                          {:action :start :root root :opts opts})))))
 
 (defn- open-browser!
   "Opens `url` in the default browser, with `open` on macOS and `xdg-open` elsewhere."
@@ -51,17 +119,19 @@
   "Starts the server for the project folder, prints its URL and opens it in the browser.
   `args` are the command-line options in [[cli-spec]] and at most one folder, see
   [[project-root]]. It runs until the last browser tab on it has closed, or the process
-  stops."
+  stops. `--help` and `--version` print and stop, and an unknown option stops with a
+  message."
   [& args]
-  (let [{:keys [opts args]}           (cli/parse-args args {:spec cli-spec})
-        {:keys [root problem] :as chosen} (project-root (str (fs/cwd)) args)]
-    (if problem
-      (fail! (problem-text chosen))
-      (let [{:keys [url stopping stop]} (server/start! (assoc opts :root root))]
-        (println "BareEdit for" root)
-        (println url)
-        (when-not (:no-open opts) (open-browser! url))
-        @stopping
-        (println "The browser tab closed, so BareEdit stopped.")
-        (stop)
-        (System/exit 0)))))
+  (let [{:keys [text root opts] what :action} (action (str (fs/cwd)) args)]
+    (case what
+      :fail    (fail! text)
+      :help    (println usage)
+      :version (println "bareedit" (version))
+      :start   (let [{:keys [url stopping stop]} (server/start! (assoc opts :root root))]
+                 (println "BareEdit for" root)
+                 (println url)
+                 (when-not (:no-open opts) (open-browser! url))
+                 @stopping
+                 (println "The browser tab closed, so BareEdit stopped.")
+                 (stop)
+                 (System/exit 0)))))
