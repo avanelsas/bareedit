@@ -1,8 +1,8 @@
 (ns bare-edit.config
   "The user's look and feel, read from one EDN file and checked.
   The file is `~/.config/bareedit/config.edn`, one per user, for every project. It holds a
-  `:theme` map with a `:preset`, and optionally a `:font-family`, a `:font-size` and the
-  `:syntax` colours for light and dark mode. A
+  `:theme` map with a `:preset`, and optionally a `:ui-font-size`, a `:font-family`, a
+  `:font-size` and the `:syntax` colours for light and dark mode. A
   missing file or key falls back to the default. A wrong value is left out and named in a
   problem, a sentence the browser shows once, so the editor always starts."
   (:require [bare-edit.protocol :as p]
@@ -39,6 +39,9 @@
   overrides the theme's syntax colours, for `:light` and `:dark` mode apart."
   {:theme {:keys {:preset      {:valid? presets
                                 :must   (str "one of " (str/join ", " (map pr-str (sort presets))))}
+                  :ui-font-size (let [{:keys [min max]} p/ui-font-sizes]
+                                  {:valid? #(and (number? %) (<= min % max))
+                                   :must   (str "a number of pixels from " min " to " max ", such as 16")})
                   :font-family {:valid? css-value?
                                 :must   "a list of fonts, such as \"Menlo, monospace\""}
                   :font-size   {:valid? #(and (number? %) (pos? %))

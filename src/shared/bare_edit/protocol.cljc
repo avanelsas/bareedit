@@ -22,6 +22,10 @@
   `:keyword` is the CSS variable `--x-color-syntax-keyword`."
   #{:comment :keyword :string :constant :function :type :tag})
 
+(def ui-font-sizes
+  "The sizes `:ui-font-size` may take, in pixels, from `:min` to `:max`."
+  {:min 12 :max 24})
+
 (def statuses
   "The closed set of reply statuses. A `:running` status exists only in the browser."
   #{:ok :error :conflict :interrupted :no-runtime :unavailable})

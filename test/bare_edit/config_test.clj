@@ -10,7 +10,15 @@
 
 (deftest valid-values
   (is (= {:config {:preset "ocean" :font-family "JetBrains Mono, monospace" :font-size 14} :problems []}
-         (config/check "{:theme {:preset \"ocean\" :font-family \"JetBrains Mono, monospace\" :font-size 14}}"))))
+         (config/check "{:theme {:preset \"ocean\" :font-family \"JetBrains Mono, monospace\" :font-size 14}}")))
+  (is (= {:preset "default" :ui-font-size 18} (:config (config/check "{:theme {:ui-font-size 18}}")))))
+
+(deftest the-interface-size-has-a-range
+  (doseq [size [11 25 "16"]]
+    (is (= [{:problem :invalid :path [:theme :ui-font-size] :value size
+             :must "a number of pixels from 12 to 24, such as 16"}]
+           (:problems (config/check (str "{:theme {:ui-font-size " (pr-str size) "}}"))))
+        (pr-str size))))
 
 (deftest wrong-values-fall-back-one-by-one
   (is (= {:config   {:preset "default"}

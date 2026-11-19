@@ -2,7 +2,8 @@
   "The text of a new settings file, built from BareDOM's own presets.
   It names every setting with the value the preset gives it, as comments, so the reader sees
   the whole file and saving it unchanged gives the same look as no file."
-  (:require [baredom.components.x-theme.model :as theme]
+  (:require [bare-edit.protocol :as p]
+            [baredom.components.x-theme.model :as theme]
             [clojure.string :as str]))
 
 (def colour-tokens
@@ -16,12 +17,16 @@
    [:type     theme/tk-color-syntax-type]
    [:tag      theme/tk-color-syntax-tag]])
 
+(def ^:private browser-px
+  "The browser's usual default font size in pixels, the size of one `rem`."
+  16)
+
 (defn- pixels
   "The size in pixels of the CSS length `s` in `rem` or `px`, or `nil` for any other unit.
-  A `rem` is 16 pixels, the browser's default."
+  A `rem` is [[browser-px]] pixels."
   [s]
   (when-let [[_ n unit] (re-matches #"([0-9.]+)(rem|px)" (str s))]
-    (let [v (* (js/parseFloat n) (if (= unit "rem") 16 1))]
+    (let [v (* (js/parseFloat n) (if (= unit "rem") browser-px 1))]
       (if (== v (js/Math.round v)) (js/Math.round v) v))))
 
 (defn preset-values
@@ -81,6 +86,11 @@
         "{:theme"]
        (wrapped " {;; One of:" "  ;;        " 72 (sort theme/allowed-presets))
        [(str "  :preset " (pr-str preset))
+        ""
+        (str "  ;; The size of the interface, in pixels, from " (:min p/ui-font-sizes)
+             " to " (:max p/ui-font-sizes) ". Without it, the")
+        (str "  ;; browser's default, normally " browser-px ". Code keeps its own :font-size.")
+        (str "  ;; :ui-font-size " browser-px)
         ""
         "  ;; The font of the editor and the results."
         (str "  ;; :font-family " (pr-str font-family))]

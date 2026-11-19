@@ -134,6 +134,23 @@
 
 ;; ── View ────────────────────────────────────────────────────────────────────
 
+(defn sync-root!
+  "Gives the page's root the font size of the look and feel in the state `s`, when it differs.
+  The root is outside the rendered page, so it is set here, see
+  [[bare-edit.page/root-font-size]]."
+  [s]
+  (let [style (.. js/document -documentElement -style)
+        size  (page/root-font-size (:config s))]
+    (when (not= size (.-fontSize style))
+      (set! (.-fontSize style) size))))
+
+(defn show!
+  "Renders the page for the state `s` into the element `app`, then sets the root's size.
+  The root is outside the page, see [[sync-root!]]."
+  [app s]
+  (render/render! app #(page/page s dispatch!))
+  (sync-root! s))
+
 (defn sync-view!
   "Gives the view the `EditorState` of the active buffer in the state `s`, when it differs.
   Switching buffers focuses the editor. A new state for the buffer already shown, such as a
@@ -184,11 +201,11 @@
     (js/console.error "run-effect! has no method for" (str k)))
   (register-components!)
   (let [app (js/document.getElementById "app")]
-    (render/render! app #(page/page @state dispatch!))
+    (show! app @state)
     (swap! editor-view assoc :view (editor/mount! (js/document.getElementById "editor")
                                                   (fn [old new] (dispatch! [:editor-state old new]))
                                                   complete!))
-    (add-watch state ::render (fn [_ _ _ s] (render/render! app #(page/page s dispatch!)))))
+    (add-watch state ::render (fn [_ _ _ s] (show! app s))))
   (.addEventListener js/window "keydown" on-keydown)
   (.addEventListener js/window "focus" #(dispatch! [:focus]))
   (.addEventListener js/window "beforeunload"

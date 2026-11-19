@@ -17,7 +17,7 @@
       (is (= {:theme {:preset "default"}} (reader/read-string text))))
     (testing "with the comment marks taken off, it holds every setting with the preset's value"
       (let [theme (:theme (reader/read-string (uncommented text)))]
-        (is (= (assoc (settings/preset-values "default") :preset "default") theme))
+        (is (= (assoc (settings/preset-values "default") :preset "default" :ui-font-size 16) theme))
         (is (= "#ff7b72" (get-in theme [:syntax :dark :keyword])))
         (is (= 16 (:font-size theme)))))
     (testing "it names every preset"

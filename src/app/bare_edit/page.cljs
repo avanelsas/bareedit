@@ -292,14 +292,24 @@
             (reset! last-result [paths v])
             v))))))
 
+(defn root-font-size
+  "The font size of the page's root for the look and feel `config`, as CSS.
+  The whole interface is sized in `rem`, so this one size scales it, and each part keeps
+  its size relative to the others. It is `:ui-font-size` in pixels, or `\"\"` for the
+  browser's default."
+  [{:keys [ui-font-size]}]
+  (if ui-font-size (str ui-font-size "px") ""))
+
 (defn font-style
-  "The inline style that gives an element the fonts of the look and feel `config`.
-  It sets `--x-font-family-mono` and `--x-font-size-base`, in pixels, only for the ones
-  `config` names, and is empty otherwise. It goes on the editor and the results column,
-  not on the `x-theme`, because `--x-font-size-base` sizes the whole UI."
+  "The inline style that gives an element the code fonts of the look and feel `config`.
+  It sets `--x-font-family-mono` when `config` names a font, and always sets
+  `--x-font-size-base`: `:font-size` in pixels, or else `medium`, the browser's default
+  size. Code then keeps its size when [[root-font-size]] scales the interface. It goes on
+  the editor and the results column, not on the `x-theme`, because `--x-font-size-base`
+  sizes much of the interface."
   [{:keys [font-family font-size]}]
   (str (when font-family (str "--x-font-family-mono:" font-family ";"))
-       (when font-size (str "--x-font-size-base:" font-size "px;"))))
+       "--x-font-size-base:" (if font-size (str font-size "px") "medium") ";"))
 
 (defn syntax-style
   "The CSS that sets the theme's syntax colours to the look and feel's `syntax` overrides.

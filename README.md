@@ -60,6 +60,7 @@ The look comes from one file for every project, `~/.config/bareedit/config.edn`:
 
 ```clojure
 {:theme {:preset    "ocean"                              ; a BareDOM preset
+         :ui-font-size 18                                ; optional, in pixels
          :font-family "JetBrains Mono, Menlo, monospace" ; optional
          :font-size 14                                   ; optional, in pixels
          :syntax    {:light {:keyword "#a626a4"}         ; optional, code colours
@@ -67,7 +68,8 @@ The look comes from one file for every project, `~/.config/bareedit/config.edn`:
 ```
 
 - **Preset.** One of BareDOM's presets: `default`, `ocean`, `forest`, `sunset`, `neo-brutalist`, `aurora`, `mono-ai` or `warm-mineral`. Each has light and dark colours, and the system setting picks between them.
-- **Fonts.** `:font-family` and `:font-size` set the editor and the results column. The rest of the page keeps the preset's fonts.
+- **Interface size.** `:ui-font-size` scales the whole interface (tree, tabs, palette, bars), from 12 to 24 pixels. Each part keeps its size relative to the others, so the status bar stays smaller than the tabs. Without it, the browser's default size is used, normally 16.
+- **Fonts.** `:font-family` and `:font-size` set the code: the editor and the results column. They do not follow `:ui-font-size`. The rest of the page keeps the preset's fonts.
 - **Code colours.** Each preset colours code with its own syntax colours. `:syntax` changes any of them, for `:light` and `:dark` mode apart. The colours are `:comment`, `:keyword`, `:string`, `:constant`, `:function`, `:type` and `:tag`, and each takes a CSS colour. A colour set for one mode does not change the other.
 - **Defaults.** Without the file, or without a key, the preset is `default` and the fonts are the preset's.
 - **Mistakes.** A value that is wrong, or a key that is unknown, is ignored, and a warning says so when the page loads.
