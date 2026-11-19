@@ -311,6 +311,14 @@
   (str (when font-family (str "--x-font-family-mono:" font-family ";"))
        "--x-font-size-base:" (if font-size (str font-size "px") "medium") ";"))
 
+(defn ruler-style
+  "The inline style that places the editor's guide line for the look and feel `config`.
+  It sets `--ruler` to the guide's column in `ch`: `:ruler`, or the default of
+  [[bare-edit.protocol/ruler-columns]]. With `:ruler false` it is empty, and no line shows."
+  [{:keys [ruler]}]
+  (let [column (if (nil? ruler) (:default p/ruler-columns) ruler)]
+    (if column (str "--ruler:" column "ch;") "")))
+
 (defn syntax-style
   "The CSS that sets the theme's syntax colours to the look and feel's `syntax` overrides.
   `syntax` holds a map of token to colour for each mode, `:light` and `:dark`. Each mode's
@@ -360,7 +368,8 @@
         (for [id tabs]
           (tab-view (get buffers id) dispatch))]
        ;; hidden while the active file loads, so nothing typed lands in the previous file's text
-       [:div {:id "editor" :data-keep true :style (str fonts (when-not (:state active-b) "display:none"))}]
+       [:div {:id "editor" :data-keep true
+              :style (str fonts (ruler-style config) (when-not (:state active-b) "display:none"))}]
        ;; render matches children by position, so the message comes after the editor: one
        ;; that came before would move the editor's place, and the editor would be rebuilt
        (when (empty? tabs)

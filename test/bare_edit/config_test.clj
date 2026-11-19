@@ -13,6 +13,13 @@
          (config/check "{:theme {:preset \"ocean\" :font-family \"JetBrains Mono, monospace\" :font-size 14}}")))
   (is (= {:preset "default" :ui-font-size 18} (:config (config/check "{:theme {:ui-font-size 18}}")))))
 
+(deftest the-guide-line-has-a-range
+  (is (= {:preset "default" :ruler false} (:config (config/check "{:theme {:ruler false}}"))))
+  (is (= {:preset "default" :ruler 100} (:config (config/check "{:theme {:ruler 100}}"))))
+  (doseq [column [39 201 80.5 "80" true]]
+    (is (= [:invalid] (map :problem (:problems (config/check (str "{:theme {:ruler " (pr-str column) "}}")))))
+        (pr-str column))))
+
 (deftest the-interface-size-has-a-range
   (doseq [size [11 25 "16"]]
     (is (= [{:problem :invalid :path [:theme :ui-font-size] :value size

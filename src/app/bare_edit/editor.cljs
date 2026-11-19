@@ -20,18 +20,28 @@
             [nextjournal.clojure-mode.extensions.formatting :as formatting]
             [nextjournal.clojure-mode.extensions.selection-history :as sel-history]))
 
+(def ^:private line-indent
+  "The space before the text of each line, which the guide line counts its column from."
+  "6px")
+
 (def theme
   "The editor's look, from BareDOM's colour and font tokens.
   It covers the text and every CodeMirror surface the editor shows: the completion popup,
   the search panel with its fields and buttons, and the search matches, so all of them
-  follow the BareDOM theme in light and dark mode."
+  follow the BareDOM theme in light and dark mode. A dashed guide line marks the column in
+  `--ruler`, drawn over the lines, and none shows without it."
   (.theme EditorView
           (clj->js {"&"                          {:height "100%" :color "var(--x-color-text)"
                                                   :backgroundColor "var(--x-color-bg)"}
                     ".cm-scroller"               {:fontFamily "var(--x-font-family-mono, monospace)"
                                                   :fontSize "var(--x-font-size-base, 14px)"
                                                   :lineHeight "1.5"}
-                    ".cm-content"                {:caretColor "var(--x-color-primary)"}
+                    ".cm-content"                {:caretColor "var(--x-color-primary)" :position "relative"}
+                    ".cm-line"                   {:paddingLeft line-indent}
+                    ".cm-content::after"         {:content "\"\"" :position "absolute" :top "0" :bottom "0"
+                                                  :left (str "calc(" line-indent " + var(--ruler, -100vw))")
+                                                  :borderLeft "1px dashed var(--x-color-border)"
+                                                  :pointerEvents "none"}
                     ".cm-cursor"                 {:borderLeftColor "var(--x-color-primary)"}
                     "&.cm-focused"               {:outline "none"}
                     ".cm-gutters"                {:backgroundColor "var(--x-color-bg)"

@@ -58,8 +58,8 @@
       ((:on-x-tree-select (second (first (elements h :x-tree)))) #js {:detail #js {:id "src/b.clj"}})
       (is (= [[:open-file "src/b.clj"]] @events)))
     (testing "the editor shows the active buffer, and hides while the active one loads"
-      (is (= "--x-font-size-base:medium;" (editor-style h)))
-      (is (= "--x-font-size-base:medium;display:none" (editor-style (render (assoc state :active 2) events)))))))
+      (is (= "--x-font-size-base:medium;--ruler:80ch;" (editor-style h)))
+      (is (= "--x-font-size-base:medium;--ruler:80ch;display:none" (editor-style (render (assoc state :active 2) events)))))))
 
 (deftest question-dialogs
   (testing "no question, no dialog"
@@ -158,7 +158,7 @@
       (is (= "100" (some #(when (= "inner closed" (:class (second %))) (:position (second %)))
                          (elements closed-h :x-split-pane))))
       (testing "and the editor stays on the page either way"
-        (is (= "--x-font-size-base:medium;" (editor-style closed-h)))))))
+        (is (= "--x-font-size-base:medium;--ruler:80ch;" (editor-style closed-h)))))))
 
 (deftest the-look-and-feel
   (testing "the x-theme picks its own preset until the look and feel arrives"
@@ -166,14 +166,20 @@
   (let [h (render (assoc state :config {:preset "ocean" :font-family "Menlo, monospace" :font-size 14}) (atom []))]
     (testing "then it is the user's"
       (is (= "ocean" (:preset (second h)))))
-    (testing "the fonts go on the editor and the results column only"
-      (is (= "--x-font-family-mono:Menlo, monospace;--x-font-size-base:14px;" (editor-style h)))
-      (is (= (editor-style h) (some #(when (= "results-pane" (:class (second %))) (:style (second %)))
-                                    (elements h :div))))
+    (testing "the fonts go on the editor and the results column only, the guide line on the editor"
+      (is (= "--x-font-family-mono:Menlo, monospace;--x-font-size-base:14px;--ruler:80ch;" (editor-style h)))
+      (is (= "--x-font-family-mono:Menlo, monospace;--x-font-size-base:14px;"
+             (some #(when (= "results-pane" (:class (second %))) (:style (second %)))
+                   (elements h :div))))
       (is (nil? (:style (second h)))))
     (testing "a font the file does not name is not set, and code without a size takes the browser's"
       (is (= "--x-font-size-base:12px;" (page/font-style {:font-size 12})))
       (is (= "--x-font-size-base:medium;" (page/font-style {}))))))
+
+(deftest the-guide-line
+  (is (= "--ruler:80ch;" (page/ruler-style {})))
+  (is (= "--ruler:100ch;" (page/ruler-style {:ruler 100})))
+  (is (= "" (page/ruler-style {:ruler false}))))
 
 (deftest the-interface-size
   (is (= "18px" (page/root-font-size {:ui-font-size 18})))
