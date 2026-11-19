@@ -57,7 +57,7 @@
     (testing "creating over a file that appeared meanwhile is a conflict"
       (is (contains? (files/save! root "src/a.clj" "x" :absent) :conflict)))
     (testing "no temporary files are left behind"
-      (is (empty? (fs/glob root "**/.bare-edit-*" {:hidden true}))))))
+      (is (empty? (fs/glob root "**/.bareedit-*" {:hidden true}))))))
 
 (deftest simultaneous-saves
   (testing "two saves from the same version: one wins, the other conflicts"
@@ -73,7 +73,7 @@
   (testing "a save onto a folder throws and leaves no temporary file"
     (let [root (project {"d/x.clj" ""})]
       (is (thrown? Exception (files/save! root "d" "text" :absent)))
-      (is (empty? (fs/glob root "**/.bare-edit-*" {:hidden true}))))))
+      (is (empty? (fs/glob root "**/.bareedit-*" {:hidden true}))))))
 
 (deftest saving-keeps-permissions
   (let [root (project {"run.sh" "echo hi"})

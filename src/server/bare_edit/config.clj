@@ -1,6 +1,6 @@
 (ns bare-edit.config
   "The user's look and feel, read from one EDN file and checked.
-  The file is `~/.config/bare-edit/config.edn`, one per user, for every project. It holds a
+  The file is `~/.config/bareedit/config.edn`, one per user, for every project. It holds a
   `:theme` map with a `:preset`, and optionally a `:font-mono`, a `:font-size` and the
   `:syntax` colours for light and dark mode. A
   missing file or key falls back to the default. A wrong value is left out and named in a
@@ -47,8 +47,8 @@
                                      :dark  mode-colours}}}}})
 
 (def default-file
-  "Where the file is: `~/.config/bare-edit/config.edn`."
-  (str (fs/path (fs/home) ".config" "bare-edit" "config.edn")))
+  "Where the file is: `~/.config/bareedit/config.edn`."
+  (str (fs/path (fs/home) ".config" "bareedit" "config.edn")))
 
 (defn read-file
   "The text of the file at `path`, or `nil` when there is no file."

@@ -1,5 +1,5 @@
 (ns bare-edit.main
-  "The `bare-edit` command, which starts an editor for the folder it runs in.
+  "The `bareedit` command, which starts an editor for the folder it runs in.
   The editor reaches only that folder. Each project gets its own process."
   (:require [bare-edit.server :as server]
             [babashka.cli :as cli]

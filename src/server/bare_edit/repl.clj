@@ -252,7 +252,7 @@
     :no-watch    [:no-runtime "No shadow-cljs watch is running. Start one, such as npx shadow-cljs watch app."]
     :build-not-running [:no-runtime (str "The build " build " named with --build has no running watch.")]
     :several-builds    [:unavailable (str "Several shadow-cljs builds run: " (str/join ", " builds) ". "
-                                          "Restart bare-edit with --build and one of them.")]
+                                          "Restart bareedit with --build and one of them.")]
     :not-switched      [:unavailable "shadow-cljs did not switch the session to ClojureScript."]
     :cljs-interrupt    [:unavailable "A ClojureScript evaluation cannot be interrupted: shadow-cljs cannot stop running JavaScript."]))
 

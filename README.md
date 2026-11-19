@@ -8,7 +8,7 @@
   </picture>
 </p>
 
-A small, local, browser-based editor for Clojure and ClojureScript. Run `bare-edit` in a project folder and it opens an editor for that folder.
+A small, local, browser-based editor for Clojure and ClojureScript. Run `bareedit` in a project folder and it opens an editor for that folder.
 
 ## The REPL
 
@@ -46,7 +46,7 @@ BareEdit evaluates ClojureScript through the project's shadow-cljs. Start shadow
 npx shadow-cljs watch app
 ```
 
-- **The build.** The editor uses the build whose watch runs. When several run, start the editor with `--build` and the name of one, such as `bare-edit --build app`. Each browser tab keeps the build it started with.
+- **The build.** The editor uses the build whose watch runs. When several run, start the editor with `--build` and the name of one, such as `bareedit --build app`. Each browser tab keeps the build it started with.
 - **Messages.** When no watch runs, when no JS runtime is connected, or when the watch stops, the result says so. Start it again, and the next evaluation reconnects.
 - **Namespaces.** A namespace that is not loaded is created empty, with no message, so evaluate the file first.
 - **Evaluate file** sends the text of the file, saved or not.
@@ -56,7 +56,7 @@ npx shadow-cljs watch app
 
 ## Look and feel
 
-The look comes from one file for every project, `~/.config/bare-edit/config.edn`:
+The look comes from one file for every project, `~/.config/bareedit/config.edn`:
 
 ```clojure
 {:theme {:preset    "ocean"                              ; a BareDOM preset

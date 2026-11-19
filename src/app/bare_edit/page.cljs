@@ -352,7 +352,7 @@
        ;; render matches children by position, so the message comes after the editor: one
        ;; that came before would move the editor's place, and the editor would be rebuilt
        (when (empty? tabs)
-         [:div {:class "empty"} (if (= conn :closed) "Disconnected. Restart bare-edit." "Open a file from the tree.")])]
+         [:div {:class "empty"} (if (= conn :closed) "Disconnected. Restart bareedit." "Open a file from the tree.")])]
       [:div {:slot "end" :class "results-pane" :style fonts} (when results-open? (results-view s dispatch))]]]
      (status-bar s dispatch)
      ;; render matches children by position, so each overlay has a fixed slot and one
