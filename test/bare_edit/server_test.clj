@@ -111,3 +111,36 @@
     (testing "a save from an older version is refused"
       (is (= :conflict (:status (ask :save-settings {:text "{:theme {}}" :version :absent}))))
       (is (= "{}" (slurp file))))))
+
+(deftest pages-are-counted
+  (let [after (fn [& events] (reduce server/pages-after {:open #{} :closes 0} events))]
+    (is (= {:open #{:a} :closes 0} (after [:open :a])))
+    (is (= {:open #{} :closes 1} (after [:open :a] [:close :a])))
+    (is (= {:open #{:b} :closes 0} (after [:open :a] [:open :b] [:close :a])))
+    (is (= {:open #{} :closes 2} (after [:open :a] [:close :a] [:open :b] [:close :b])))))
+
+(defn- short-wait-server
+  "A server for a new temporary project that stops 200 ms after its last page closes."
+  []
+  (server/start! {:root          (str (fs/create-temp-dir))
+                  :config-file   (str (fs/path (fs/create-temp-dir) "config.edn"))
+                  :close-wait-ms 200}))
+
+(deftest the-server-stops-when-its-last-page-closes
+  (testing "the last page closing stops it after the wait"
+    (let [srv (short-wait-server)]
+      (try (ws/close! (:ws (connect srv)))
+           (is (= :last-page-closed (deref (:stopping srv) 2000 :still-running)))
+           (finally ((:stop srv))))))
+  (testing "a page that opens in the wait, as on a reload, keeps it running"
+    (let [srv (short-wait-server)]
+      (try (ws/close! (:ws (connect srv)))
+           (connect srv)
+           (is (= :still-running (deref (:stopping srv) 600 :still-running)))
+           (finally ((:stop srv))))))
+  (testing "a second page keeps it running"
+    (let [srv (short-wait-server)]
+      (try (connect srv)
+           (ws/close! (:ws (connect srv)))
+           (is (= :still-running (deref (:stopping srv) 600 :still-running)))
+           (finally ((:stop srv)))))))
