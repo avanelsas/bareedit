@@ -474,3 +474,23 @@
 (deftest every-group-is-known
   (doseq [{:keys [id group]} steps/commands :when group]
     (is (contains? steps/group-order group) (str id " has a known group"))))
+
+(deftest unreadable-folders-are-told-once
+  (let [r     (run connected [:command {:id :refresh-file-tree}])
+        reply (fn [r folders] (run (:state r) (reply-to r :ok {:paths ["src/a.clj"] :unreadable folders})))
+        once  (reply r ["Library" "locked"])]
+    (is (= ["Library" "locked"] (get-in once [:state :unreadable])))
+    (is (= [[:toast :warning "Could not read 2 folders: Library, locked. They are left out of the file tree."]]
+           (filter #(= :toast (first %)) (:fx once))))
+    (testing "the same folders again show no toast"
+      (let [again (reply (run (:state once) [:command {:id :refresh-file-tree}]) ["Library" "locked"])]
+        (is (not-any? #(= :toast (first %)) (:fx again)))))
+    (testing "no unreadable folders show no toast"
+      (is (not-any? #(= :toast (first %)) (:fx (reply r [])))))))
+
+(deftest unreadable-text
+  (is (= "Could not read the folder Desktop. It is left out of the file tree."
+         (steps/unreadable-text ["Desktop"])))
+  (is (= "Could not read 5 folders: a, b, c and 2 more. They are left out of the file tree."
+         (steps/unreadable-text ["a" "b" "c" "d" "e"])))
+  (is (= "Could not read the project folder." (steps/unreadable-text ["."]))))

@@ -23,21 +23,29 @@
         (fs/set-last-modified-time (fs/path root "a.clj") (java.nio.file.attribute.FileTime/fromMillis 0))
         (is (= before (files/version (fs/path root "a.clj"))))))))
 
-(deftest path-list-outside-git
+(deftest listing-outside-git
   (let [root (project {"src/a.clj" "" "README.md" "" "node_modules/x/index.js" ""
                        "target/out.jar" "" ".shadow-cljs/cache" ""})]
-    (is (= ["README.md" "src/a.clj"] (files/path-list root)))))
+    (is (= ["README.md" "src/a.clj"] (:paths (files/listing root))))))
 
-(deftest path-list-in-git
+(deftest a-folder-that-cannot-be-read-is-left-out
+  (let [root   (project {"src/a.clj" "" "locked/b.clj" ""})
+        locked (fs/path root "locked")]
+    (fs/set-posix-file-permissions locked "---------")
+    (try
+      (is (= {:paths ["src/a.clj"] :unreadable ["locked"]} (files/listing root)))
+      (finally (fs/set-posix-file-permissions locked "rwxr-xr-x")))))
+
+(deftest listing-in-git
   (let [root (project {"src/a.clj" "" "src/b.cljs" "" "out/main.js" "" ".gitignore" "out/\n"})]
     (process/shell {:dir (str root) :out :string :err :string} "git" "init" "-q")
     (process/shell {:dir (str root) :out :string :err :string} "git" "add" "src/a.clj")
     (spit (str (fs/path root "src" "wéird name.clj")) "")
     (testing "tracked plus untracked files that are not ignored, with odd names intact"
-      (is (= [".gitignore" "src/a.clj" "src/b.cljs" "src/wéird name.clj"] (files/path-list root))))
+      (is (= [".gitignore" "src/a.clj" "src/b.cljs" "src/wéird name.clj"] (:paths (files/listing root)))))
     (testing "a tracked file deleted on disk is dropped"
       (fs/delete (fs/path root "src" "a.clj"))
-      (is (not-any? #{"src/a.clj"} (files/path-list root))))))
+      (is (not-any? #{"src/a.clj"} (:paths (files/listing root)))))))
 
 (deftest read-and-save
   (let [root (project {"src/a.clj" "(ns a)"})

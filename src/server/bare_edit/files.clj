@@ -41,29 +41,47 @@
     (when (zero? exit)
       (remove str/blank? (str/split out #"\u0000")))))
 
-(defn- walked-paths
-  "Every regular file under the folder `root`, as project-relative paths.
-  The walk does not descend into the [[skipped]] folders or follow symlinked folders."
-  [root]
-  (let [root (fs/canonicalize root)]
-    (letfn [(walk [dir]
-              (mapcat (fn [p]
-                        (cond (fs/directory? p {:nofollow-links true})
-                              (when-not (skipped (str (fs/file-name p))) (walk p))
-                              (fs/regular-file? p) [(paths/relative root p)]))
-                      (fs/list-dir dir)))]
-      (walk root))))
+(defn- entries
+  "The entries of the folder `dir`, or `nil` when it cannot be listed."
+  [dir]
+  (try (fs/list-dir dir)
+       (catch java.io.IOException _ nil)))
 
-(defn path-list
-  "Every file in the project at `root`, as sorted project-relative paths.
-  In a git repository, git lists them; otherwise the folder is walked."
+(defn- walked
+  "Every regular file under the folder `root`, and every folder the walk could not list.
+  Returns `{:paths :unreadable}`, both project-relative, with `\".\"` for `root` itself. The
+  walk does not descend into the [[skipped]] folders or follow symlinked folders. A folder
+  it cannot list is left out, and the rest of the walk goes on."
   [root]
-  (->> (or (git-paths root) (walked-paths root))
-       ;; drops tracked files deleted on disk, and symlinks that lead outside the project
-       (filter #(some-> (paths/resolve-in root %) fs/regular-file?))
-       distinct
-       sort
-       vec))
+  (let [root (fs/canonicalize root)
+        rel  (fn [p] (let [r (paths/relative root p)] (if (= "" r) "." r)))]
+    (letfn [(walk [found dir]
+              (if-let [listed (entries dir)]
+                (reduce (fn [found p]
+                          (cond (fs/directory? p {:nofollow-links true})
+                                (cond-> found (not (skipped (str (fs/file-name p)))) (walk p))
+                                (fs/regular-file? p) (update found :paths conj (rel p))
+                                :else                found))
+                        found listed)
+                (update found :unreadable conj (rel dir))))]
+      (walk {:paths [] :unreadable []} root))))
+
+(defn listing
+  "The files of the project at `root`, and the folders that could not be read.
+  Returns `{:paths :unreadable}`, each a sorted vector of project-relative paths. In a git
+  repository, git lists the files and `:unreadable` is empty; otherwise the folder is
+  walked."
+  [root]
+  (let [{:keys [paths unreadable]} (if-let [listed (git-paths root)]
+                                     {:paths listed :unreadable []}
+                                     (walked root))]
+    {:paths      (->> paths
+                      ;; drops tracked files deleted on disk, and symlinks that lead outside the project
+                      (filter #(some-> (paths/resolve-in root %) fs/regular-file?))
+                      distinct
+                      sort
+                      vec)
+     :unreadable (vec (sort unreadable))}))
 
 ;; ── Reading and saving ──────────────────────────────────────────────────────
 

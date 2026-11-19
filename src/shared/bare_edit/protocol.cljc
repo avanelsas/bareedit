@@ -36,7 +36,7 @@
 (def ops
   "The operations, each with its request keys and their kinds, and its reply keys.
   The reply keys are those of a reply whose status is `:ok`."
-  {:paths       {:request {}                                             :reply #{:paths}}
+  {:paths       {:request {}                                             :reply #{:paths :unreadable}}
    :read        {:request {:paths :strings}                              :reply #{:files}}
    :save        {:request {:path :string :text :string :version :version} :reply #{:version}}
    :rename      {:request {:from :string :to :string :version :version}  :reply #{:version}}

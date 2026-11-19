@@ -63,7 +63,7 @@
       (is (nil? (ask c "{:op")))
       (is (= 3 (:id (ask c (p/request :config 3 {}))))))
     (testing "files: list, save a new file, read it back, and a stale save conflicts"
-      (is (= {:id 4 :status :ok :paths []} (ask c (p/request :paths 4 {}))))
+      (is (= {:id 4 :status :ok :paths [] :unreadable []} (ask c (p/request :paths 4 {}))))
       (let [{v :version :as saved} (ask c (p/request :save 5 {:path "src/a.clj" :text "(ns a)" :version :absent}))]
         (is (= :ok (:status saved)))
         (is (= {"src/a.clj" {:text "(ns a)" :version v}}

@@ -14,7 +14,8 @@
   never touches the atom, the socket or the page."
   (:require [bare-edit.editor :as editor]
             [bare-edit.model :as model]
-            [bare-edit.protocol :as p]))
+            [bare-edit.protocol :as p]
+            [clojure.string :as str]))
 
 (def initial-state
   "The state when the page loads, before the connection opens.
@@ -28,7 +29,8 @@
   entries shown in full. `:conn` is `:connecting`, `:open` or `:closed`. `:config` is the
   user's look and feel, `{:preset :font-mono :font-size}` from the server, or `nil` until
   it arrives, and `:project` the project folder's name, the same way. `:repl` holds the
-  last thing heard from the REPL of each session kind, see [[record-repl]]."
+  last thing heard from the REPL of each session kind, see [[record-repl]]. `:unreadable`
+  holds the folders the last path list could not read."
   {:conn :connecting
    :config nil
    :project nil
@@ -37,6 +39,7 @@
    :next-buffer 1
    :pending {}
    :paths []
+   :unreadable []
    :expanded []
    :buffers {}
    :tabs []
@@ -512,9 +515,24 @@
 (defmethod on-reply :project [r _req {:keys [status name]}]
   (cond-> r (= :ok status) (change assoc :project name)))
 
-(defmethod on-reply :paths [r _req {:keys [status paths message]}]
+(defn unreadable-text
+  "The message for `folders`, the project-relative folders the path list could not read.
+  It names at most three, and `\".\"` is the project folder itself."
+  [folders]
+  (let [n     (count folders)
+        shown (take 3 folders)
+        more  (- n (count shown))]
+    (if (= ["."] folders)
+      "Could not read the project folder."
+      (str "Could not read " (if (= 1 n) "the folder " (str n " folders: "))
+           (str/join ", " shown) (when (pos? more) (str " and " more " more")) ". "
+           (if (= 1 n) "It is" "They are") " left out of the file tree."))))
+
+(defmethod on-reply :paths [r _req {:keys [status paths unreadable message]}]
   (if (= :ok status)
-    (change r assoc :paths paths)
+    (cond-> (change r assoc :paths paths :unreadable unreadable)
+      (and (seq unreadable) (not= unreadable (get-in r [:state :unreadable])))
+      (toast :warning (unreadable-text unreadable)))
     (toast r :error message)))
 
 (defmethod on-reply :read [r {:keys [paths]} {:keys [status files message]}]

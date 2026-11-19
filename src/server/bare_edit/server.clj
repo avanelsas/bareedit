@@ -49,7 +49,7 @@
   (p/reply id :ok {:name (str (fs/file-name root))}))
 
 (defmethod handle :paths [{:keys [root]} {:keys [id]}]
-  (p/reply id :ok {:paths (files/path-list root)}))
+  (p/reply id :ok (select-keys (files/listing root) [:paths :unreadable])))
 
 (defmethod handle :read [{:keys [root]} {:keys [id] rels :paths}]
   (if-let [bad (outside root rels)]
