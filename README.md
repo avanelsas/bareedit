@@ -40,6 +40,7 @@ cd my-project
 bareedit                 # opens the editor for this folder
 bareedit ../other        # or for another folder
 bareedit --build app     # when several shadow-cljs builds run
+bareedit --help          # the options, and --version for the version
 ```
 
 The editor opens in your browser and reaches only that folder. Closing the browser tab stops it a few seconds later. A reload keeps it running.
