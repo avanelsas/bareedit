@@ -67,10 +67,10 @@
       (let [{v :version :as saved} (ask c (p/request :save 5 {:path "src/a.clj" :text "(ns a)" :version :absent}))]
         (is (= :ok (:status saved)))
         (is (= {"src/a.clj" {:text "(ns a)" :version v}}
-               (:files (ask c (p/request :read 6 {:paths ["src/a.clj"]})))))
+               (:files (ask c (p/request :read 6 {:paths ["src/a.clj"] :known {}})))))
         (is (= :conflict (:status (ask c (p/request :save 7 {:path "src/a.clj" :text "x" :version :absent})))))))
     (testing "rename: a file moves, and never over another or out of the project"
-      (let [v (get-in (ask c (p/request :read 12 {:paths ["src/a.clj"]})) [:files "src/a.clj" :version])]
+      (let [v (get-in (ask c (p/request :read 12 {:paths ["src/a.clj"] :known {}})) [:files "src/a.clj" :version])]
         (ask c (p/request :save 13 {:path "src/b.clj" :text "(ns b)" :version :absent}))
         (is (= :error (:status (ask c (p/request :rename 14 {:from "src/a.clj" :to "src/b.clj" :version v})))))
         (is (= :error (:status (ask c (p/request :rename 15 {:from "src/a.clj" :to "../x.clj" :version v})))))
@@ -79,7 +79,7 @@
                (ask c (p/request :rename 17 {:from "src/a.clj" :to "src/c.clj" :version v}))))
         (is (= ["src/b.clj" "src/c.clj"] (:paths (ask c (p/request :paths 18 {})))))))
     (testing "paths that leave the project are refused"
-      (is (= :error (:status (ask c (p/request :read 8 {:paths ["../etc/passwd"]})))))
+      (is (= :error (:status (ask c (p/request :read 8 {:paths ["../etc/passwd"] :known {}})))))
       (is (= :error (:status (ask c (p/request :save 9 {:path "/tmp/x" :text "" :version :absent}))))))
     (testing "an operation that fails still gets an :error reply"
       (ask c (p/request :save 10 {:path "d/x.clj" :text "" :version :absent}))
@@ -144,3 +144,13 @@
            (ws/close! (:ws (connect srv)))
            (is (= :still-running (deref (:stopping srv) 600 :still-running)))
            (finally ((:stop srv)))))))
+
+(deftest a-file-at-its-known-version-comes-without-its-text
+  (spit (str (fs/path (:root *srv*) "a.clj")) "(ns a)")
+  (let [c (connect *srv*)
+        v (get-in (ask c (p/request :read 1 {:paths ["a.clj"] :known {}})) [:files "a.clj" :version])]
+    (is (= {"a.clj" {:version v}}
+           (:files (ask c (p/request :read 2 {:paths ["a.clj"] :known {"a.clj" v}})))))
+    (spit (str (fs/path (:root *srv*) "a.clj")) "(ns a) ;; changed")
+    (is (= "(ns a) ;; changed"
+           (get-in (ask c (p/request :read 3 {:paths ["a.clj"] :known {"a.clj" v}})) [:files "a.clj" :text])))))

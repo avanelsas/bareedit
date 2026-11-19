@@ -30,19 +30,26 @@
   "The closed set of reply statuses. A `:running` status exists only in the browser."
   #{:ok :error :conflict :interrupted :no-runtime :unavailable})
 
+(defn version?
+  "Whether `v` is a file version: a hash string, or `:absent` for a file not on disk."
+  [v]
+  (or (= :absent v) (string? v)))
+
 (def kinds
   "The kinds a request value may be, each as a predicate and the words that name it."
   {:string   [string?                                    "a string"]
    :strings  [#(and (vector? %) (every? string? %))      "a vector of strings"]
    :int      [int?                                       "an integer"]
-   :version  [#(or (= :absent %) (string? %))            "a version (a hash string or :absent)"]
+   :version  [version?                                   "a version (a hash string or :absent)"]
+   :versions [#(and (map? %) (every? string? (keys %)) (every? version? (vals %)))
+              "a map of path to version"]
    :ns       [#(or (nil? %) (string? %))                 "a namespace name or nil"]})
 
 (def ops
   "The operations, each with its request keys and their kinds, and its reply keys.
   The reply keys are those of a reply whose status is `:ok`."
   {:paths       {:request {}                                             :reply #{:paths :unreadable}}
-   :read        {:request {:paths :strings}                              :reply #{:files}}
+   :read        {:request {:paths :strings :known :versions}             :reply #{:files}}
    :save        {:request {:path :string :text :string :version :version} :reply #{:version}}
    :rename      {:request {:from :string :to :string :version :version}  :reply #{:version}}
    :eval        {:request {:path :string :ns :ns :line :int :code :string} :reply #{:out :err :value}}

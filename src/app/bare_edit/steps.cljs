@@ -110,10 +110,14 @@
   (if state (editor/text state) ""))
 
 (defn unsaved?
-  "Whether the buffer `b` has text that differs from the disk. A loading buffer has none."
-  [b]
+  "Whether the buffer `b` has text that differs from the disk. A loading buffer has none.
+  The page asks this of every tab on every render, so it is cheap: see
+  [[bare-edit.editor/same-text?]]."
+  [{:keys [state disk-text] :as b}]
   (and (not (:loading? b))
-       (not= (buffer-text b) (:disk-text b))))
+       (if state
+         (not (editor/same-text? state disk-text))
+         (not= "" disk-text))))
 
 (defn buffer-ids-for
   "The ids of the buffers in the state `s` that hold the file `path`."
@@ -206,11 +210,13 @@
 
 (defn apply-disk
   "Returns the state `s` after the buffer `id` meets `disk`, the file's `:text` and `:version`.
-  See [[bare-edit.model/disk-action]] for what happens. A loading buffer simply loads."
+  See [[bare-edit.model/disk-action]] for what happens. A loading buffer simply loads, but
+  only from a `disk` with `:text`: one without, a reply to a read that knew the version,
+  leaves it to wait for its own read."
   [s id disk]
   (let [b (get-in s [:buffers id])]
     (if (:loading? b)
-      (assoc-in s [:buffers id] (with-disk b disk))
+      (cond-> s (contains? disk :text) (assoc-in [:buffers id] (with-disk b disk)))
       (case (model/disk-action (unsaved? b) (:disk-version b) (:version disk))
         :none         s
         :reload       (assoc-in s [:buffers id] (with-disk b disk))
@@ -316,14 +322,24 @@
 
 ;; ── Actions shared by several events ────────────────────────────────────────
 
+(defn- known-versions
+  "The disk version the state `s` holds for each of `paths` whose buffers have all loaded.
+  The server leaves out the text of a file still at that version."
+  [s paths]
+  (into {} (for [path paths
+                 :let [bs (map #(get-in s [:buffers %]) (buffer-ids-for s path))]
+                 :when (and (seq bs) (not-any? :loading? bs) (some? (:disk-version (first bs))))]
+             [path (:disk-version (first bs))])))
+
 (defn read-paths
   "Returns the result `r` with reads of `paths` to send.
-  The project files go in one `:read`, and `:settings`, the settings file, goes in a
-  `:read-settings`, since it is not in the project."
-  [r paths]
+  The project files go in one `:read`, with the versions already held, see
+  [[known-versions]], and `:settings`, the settings file, goes in a `:read-settings`, since
+  it is not in the project."
+  [{s :state :as r} paths]
   (let [{settings true files false} (group-by model/settings? paths)]
     (cond-> r
-      (seq files)    (send :read {:paths (vec files)})
+      (seq files)    (send :read {:paths (vec files) :known (known-versions s files)})
       (seq settings) (send :read-settings {}))))
 
 (defn refresh
@@ -623,7 +639,7 @@
                   (send :paths {})
                   (toast :info (str "Renamed " (model/file-name from) " to " (model/file-name to) ".")))
     ;; the read then says what is on disk: changed, or gone
-    :conflict (-> r (toast :error message) (send :read {:paths [from]}))
+    :conflict (-> r (toast :error message) (read-paths [from]))
     (toast r :error message)))
 
 (defn- saved

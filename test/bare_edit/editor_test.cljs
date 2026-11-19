@@ -117,3 +117,14 @@
     (is (some? (classes "foo")))
     (is (not= (classes "defn") (classes "foo")))
     (is (= (classes "defn") (classes "inc")) "a call is coloured like defn")))
+
+(deftest same-text
+  (let [s (editor/new-state "(ns a)")]
+    (are [text same?] (= same? (editor/same-text? s text))
+      "(ns a)"  true
+      "(ns b)"  false
+      "(ns a) " false
+      ""        false)
+    (testing "the answer for a state and a text stays the same when asked again"
+      (is (editor/same-text? s "(ns a)"))
+      (is (not (editor/same-text? s "(ns b)"))))))

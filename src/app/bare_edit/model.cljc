@@ -9,25 +9,36 @@
   [nm]
   (re-seq #"\d+|\D+" nm))
 
-(defn- digits?
-  "Whether the piece `s` is a run of digits."
+(defn- piece-key
+  "What the name piece `s` sorts by: `[number text]`.
+  For a run of digits, `number` is `[length digits]` with leading zeros dropped, so
+  `\"007\"` and `\"7\"` are equal and any length works. For other text it is `nil`.
+  `text` is the piece in lower case."
   [s]
-  (boolean (re-matches #"\d+" s)))
+  [(when (re-matches #"\d+" s)
+     (let [d (str/replace s #"^0+(?=\d)" "")] [(count d) d]))
+   (str/lower-case s)])
 
-(defn- compare-numbers
-  "Compares the runs of digits `a` and `b` by the numbers they write.
-  Leading zeros are dropped, so `\"007\"` and `\"7\"` are equal. Any length works."
-  [a b]
-  (let [value (fn [s] (let [s (str/replace s #"^0+(?=\d)" "")] [(count s) s]))]
-    (compare (value a) (value b))))
+(defn- name-key
+  "What the file name `nm` sorts by in [[name-order]], as `[piece-keys nm]`.
+  The name itself breaks a tie."
+  [nm]
+  [(mapv piece-key (name-pieces nm)) nm])
 
-(defn- compare-pieces
-  "Compares the name pieces `a` and `b`, by number when both are runs of digits.
-  Otherwise they compare as text that ignores case."
-  [a b]
-  (if (and (digits? a) (digits? b))
-    (compare-numbers a b)
-    (compare (str/lower-case a) (str/lower-case b))))
+(defn- compare-piece-keys
+  "Compares the piece keys `[na ta]` and `[nb tb]`, by number when both have one.
+  The numbers `na` and `nb` are there for runs of digits. Otherwise the texts `ta` and `tb`
+  compare."
+  [[na ta] [nb tb]]
+  (if (and na nb) (compare na nb) (compare ta tb)))
+
+(defn- compare-name-keys
+  "Compares the name keys `[pa a]` and `[pb b]` from [[name-key]] in [[name-order]].
+  The piece keys `pa` and `pb` compare first, then the names `a` and `b`."
+  [[pa a] [pb b]]
+  (let [c (or (first (remove zero? (map compare-piece-keys pa pb)))
+              (compare (count pa) (count pb)))]
+    (if (zero? c) (compare a b) c)))
 
 (defn name-order
   "Compares the file names `a` and `b` in the order the file tree shows them.
@@ -35,11 +46,16 @@
   and `apple` before `README`. Names equal in that order compare by character code, so the
   order is the same on every run."
   [a b]
-  (let [pa (name-pieces a)
-        pb (name-pieces b)
-        c  (or (first (remove zero? (map compare-pieces pa pb)))
-               (compare (count pa) (count pb)))]
-    (if (zero? c) (compare a b) c)))
+  (compare-name-keys (name-key a) (name-key b)))
+
+(defn- sort-names
+  "The items `xs` sorted in [[name-order]] of their names, splitting each name only once.
+  `f` gives an item's name."
+  [f xs]
+  (->> xs
+       (map (fn [x] [(name-key (f x)) x]))
+       (sort-by first compare-name-keys)
+       (map second)))
 
 (defn tree-items
   "The `x-tree` items for `paths`, a list of project-relative file paths.
@@ -52,7 +68,7 @@
               (assoc-in node [part :file?] true)))
           (items [prefix node]
             (let [{folders false files true} (update-vals (group-by (comp boolean :file? val) node)
-                                                          #(sort-by key name-order %))]
+                                                          #(sort-names key %))]
               (vec (concat
                     (for [[nm {:keys [children]}] folders
                           :let [id (str prefix nm)]]
@@ -86,20 +102,24 @@
         i (str/last-index-of f ".")]
     (if (and i (pos? i)) (subs f 0 i) f)))
 
+(defn- word-forms
+  "The forms of the query word `word` that a file name is matched against.
+  They are the word as typed, converted, and as the last part of a namespace name, so
+  `bare-edit.steps` ranks `steps.cljs` first."
+  [word]
+  (let [c (converted word)]
+    [word c (last (str/split c #"/"))]))
+
 (defn- tier
-  "How well `path` matches `word`, the last word of the query, best first.
-  1 when the file name without its extension equals it, 2 when it starts with it, 3 when it
-  contains it, and 4 when the match is elsewhere in the path. The word counts as typed,
-  converted, and as the last part of a namespace name, so `bare-edit.steps` ranks
-  `steps.cljs` first."
-  [path word]
-  (let [b  (base-name path)
-        c  (converted word)
-        ws [word c (last (str/split c #"/"))]]
-    (cond (some #(= b %) ws)                  1
-          (some #(str/starts-with? b %) ws)   2
-          (some #(str/includes? b %) ws)      3
-          :else                               4)))
+  "How well `path` matches `forms`, the [[word-forms]] of the query's last word, best first.
+  1 when the file name without its extension equals one, 2 when it starts with one, 3 when
+  it contains one, and 4 when the match is elsewhere in the path."
+  [path forms]
+  (let [b (base-name path)]
+    (cond (some #(= b %) forms)                1
+          (some #(str/starts-with? b %) forms) 2
+          (some #(str/includes? b %) forms)    3
+          :else                                4)))
 
 (defn rank-paths
   "The best `limit` paths in `paths` for the file palette's `query`, best first.
@@ -107,15 +127,19 @@
   or with `.` as `/` and `-` as `_`. Paths rank by how their file name matches the last
   word, then shorter first, then in [[name-order]]. An empty query lists the shortest paths."
   [paths query limit]
-  (let [words (remove str/blank? (str/split (str/lower-case (str/trim (or query ""))) #"\s+"))
-        match? (fn [p] (let [lp (str/lower-case p)]
-                         (every? #(or (str/includes? lp %) (str/includes? lp (converted %))) words)))
-        rank   (if (seq words)
-                 (let [w (last words)] (fn [p] [(tier p w) (count p)]))
-                 (fn [p] [(count p)]))
-        order  (fn [a b] (let [c (compare (rank a) (rank b))]
-                           (if (zero? c) (name-order a b) c)))]
-    (into [] (take limit) (sort order (filter match? paths)))))
+  (let [words  (remove str/blank? (str/split (str/lower-case (str/trim (or query ""))) #"\s+"))
+        word-pairs (mapv (fn [w] [w (converted w)]) words)
+        match?     (fn [lp] (every? (fn [[w c]] (or (str/includes? lp w) (str/includes? lp c))) word-pairs))
+        forms      (some-> (last words) word-forms)
+        score      (fn [p] [(if forms (tier p forms) 0) (count p)])]
+    ;; the paths sort by score; names are compared only among equal scores, and only in the
+    ;; groups that reach the first `limit`
+    (->> paths
+         (keep (fn [p] (when (match? (str/lower-case p)) [(score p) p])))
+         (sort-by first)
+         (partition-by first)
+         (mapcat #(sort-names identity (map second %)))
+         (into [] (take limit)))))
 
 (defn path-problem
   "Why `path` cannot be a new file in the project, as a sentence, or `nil` when it can.
