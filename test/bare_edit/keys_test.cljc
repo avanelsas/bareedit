@@ -26,3 +26,15 @@
 
 (deftest key-index
   (is (= :palette (:id ((keys/key-index true [{:id :palette :keys ["Mod-Shift-p" "F1"]}]) "F1")))))
+
+(deftest shortcuts-for-x-kbd
+  (are [spec want] (= want (keys/shortcut spec))
+    "Mod-s"                   "Mod+S"
+    "Mod-Shift-Enter"         "Mod+Shift+Enter"
+    "Alt-]"                   "Alt+]"
+    "Mod-."                   "Mod+."
+    "Ctrl-Space"              "Ctrl+Space"
+    "Alt-ArrowUp"             "Alt+↑"
+    "F2"                      "F2"
+    ["Mod-Shift-p" "F1"]      "Mod+Shift+P"
+    nil                       nil))

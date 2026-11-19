@@ -207,6 +207,10 @@
     (testing "a group keeps the order of the command list"
       (is (= ["Go to file" "New file" "Rename file" "Save" "Save all" "Refresh file tree"]
              (map :label (filter #(= "File" (:group %)) items)))))
+    (testing "a command with keys shows them, and one without shows none"
+      (let [item (fn [label] (first (filter #(= label (:label %)) items)))]
+        (is (= "Mod+S" (:shortcut (item "Save"))))
+        (is (not (contains? (item "New file") :shortcut)))))
     (testing "commands outside the palette are left out"
       (is (not-any? #(= "command-palette" (:id %)) items)))))
 
