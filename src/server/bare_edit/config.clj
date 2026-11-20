@@ -16,11 +16,6 @@
   BareDOM's ClojureScript."
   #{"default" "ocean" "forest" "sunset" "neo-brutalist" "aurora" "mono-ai" "warm-mineral"})
 
-(def defaults
-  "The look and feel when the file names nothing: the preset `\"default\"`.
-  The fonts are then the preset's own."
-  {:preset "default"})
-
 (defn- css-value?
   "Whether `x` can go into a CSS declaration: a non-blank string without `;`, `{` or `}`."
   [x]
@@ -90,19 +85,20 @@
 (defn check
   "The look and feel in `text`, the file's text, or `nil` when there is no file.
   Returns `{:config config :problems problems}`. `config` is the `:theme` the file gives,
-  checked against [[rules]], over the `:preset` of [[defaults]]. `problems` is a vector of
-  maps, one for each thing that was ignored, named by `:problem`: `:not-edn` and
+  checked against [[rules]], over the `:preset` of [[bare-edit.protocol/default-config]].
+  `problems` is a vector of maps, one for each thing that was ignored, named by
+  `:problem`: `:not-edn` and
   `:not-a-map` fall back to all the defaults, `:unknown-key` names its `:path` in the file,
   and `:invalid` names the `:path`, the `:value` and what it `:must` be. See
   [[problem-text]] for the words."
   [text]
   (let [data (try (edn/read-string (or text "")) (catch Exception _ ::unreadable))]
     (cond
-      (= ::unreadable data) {:config defaults :problems [{:problem :not-edn}]}
-      (nil? data)           {:config defaults :problems []}
-      (not (map? data))     {:config defaults :problems [{:problem :not-a-map}]}
+      (= ::unreadable data) {:config p/default-config :problems [{:problem :not-edn}]}
+      (nil? data)           {:config p/default-config :problems []}
+      (not (map? data))     {:config p/default-config :problems [{:problem :not-a-map}]}
       :else                 (let [{:keys [value problems]} (check-map rules data [])]
-                              {:config (merge defaults (:theme value)) :problems problems}))))
+                              {:config (merge p/default-config (:theme value)) :problems problems}))))
 
 (defn- path-text
   "The keys of `path` as the file writes them, separated by spaces."

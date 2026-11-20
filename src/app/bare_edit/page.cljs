@@ -256,15 +256,17 @@
 
 (defn status-bar
   "The bar under the panes for the state `s`, whose palette button calls `dispatch`.
-  On the left it shows the project's name, the connection and the last thing heard from
+  On the left it shows the project's name, `read-only` when the project cannot be changed,
+  the connection and the last thing heard from
   the REPL of each session kind, see [[repl-states]], with its message as a tooltip. On the
   right it shows the active file's session kind, the cursor's line and column, and a button
   that opens the command palette."
-  [{:keys [project conn repl buffers active]} dispatch]
+  [{:keys [project read-only? conn repl buffers active]} dispatch]
   (let [{:keys [path state]} (get buffers active)
         [line col]           (some-> state editor/cursor-position)]
     [:div {:class "status-bar"}
      [:span {:class "project"} (or project "")]
+     (when read-only? [:span {:class "read-only"} "read-only"])
      (let [{:keys [words tone]} (conn-states conn)]
        [:span {:class (str "dot " tone)} words])
      (for [kind [:clj :cljs]

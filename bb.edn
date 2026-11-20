@@ -4,11 +4,12 @@
   start {:doc "Start the editor for the current folder"
          :task (apply (requiring-resolve 'bare-edit.main/-main) *command-line-args*)}
   test  {:doc "Run the server and shared tests under bb"
-         :extra-paths ["test" "dev"]
+         :extra-paths ["test" "dev" "github-pages-demo/src" "github-pages-demo/test"]
          :requires ([clojure.test :as t])
          :task (let [nss '[bare-edit.protocol-test bare-edit.paths-test bare-edit.files-test bare-edit.server-test
                            bare-edit.docstrings-test bare-edit.repl-test bare-edit.nrepl-test
-                           bare-edit.shadow-test bare-edit.config-test bare-edit.main-test]]
+                           bare-edit.shadow-test bare-edit.config-test bare-edit.main-test
+                           bare-edit.github-pages-demo.snapshot-test]]
                  (apply require nss)
                  (let [{:keys [fail error]} (apply t/run-tests nss)]
                    (System/exit (if (zero? (+ fail error)) 0 1))))}
@@ -23,6 +24,14 @@
   install {:doc "Build the jar and install it in the local Maven repository"
            :depends [build]
            :task (shell "clojure -T:build install")}
+  github-pages-demo {:doc "Build the read-only demo for GitHub Pages into target/github-pages-demo"
+                     :extra-paths ["github-pages-demo/src"]
+                     :task (let [out "target/github-pages-demo"]
+                             (shell "npx shadow-cljs release github-pages-demo")
+                             (fs/copy "resources/public/index.html" (str out "/index.html")
+                                      {:replace-existing true})
+                             ((requiring-resolve 'bare-edit.github-pages-demo.snapshot/write!)
+                              "." (str out "/github-pages-demo.edn")))}
   docstrings {:doc "Check every docstring against .claude/rules/docstrings.md; exits 1 on a problem"
               :extra-paths ["dev"]
               :task (apply (requiring-resolve 'bare-edit.docstrings/-main) *command-line-args*)}}}

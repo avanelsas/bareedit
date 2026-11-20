@@ -11,13 +11,14 @@ A small, local, browser-based editor for Clojure and ClojureScript. A Babashka s
 
 ## Checks
 
-All five pass locally before any push; CI runs the same ones on every pull request.
+All six pass locally before any push; CI runs the same ones on every pull request.
 
-    clj-kondo --lint src test dev
+    clj-kondo --lint src test dev github-pages-demo
     bb docstrings
     bb test
     bb cljs-test
     npx shadow-cljs release app
+    npx shadow-cljs release github-pages-demo
 
 Docstrings follow `.claude/rules/docstrings.md`.
 

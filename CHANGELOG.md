@@ -7,6 +7,11 @@ the command's options and the keys may still change.
 
 ## [Unreleased]
 
+### Added
+
+- **A read-only demo on GitHub Pages.** It shows BareEdit with its own code. It cannot
+  save or evaluate.
+
 ## [0.2.0] - 2026-11-20
 
 BareEdit installs from Clojars with bbin, and the file tree is faster in large folders.
