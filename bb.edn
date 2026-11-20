@@ -1,6 +1,6 @@
 {:paths ["src/server" "src/shared" "resources"]
  :tasks
- {:requires ([babashka.fs :as fs])
+ {:requires ([babashka.fs :as fs] [clojure.string :as str])
   start {:doc "Start the editor for the current folder"
          :task (apply (requiring-resolve 'bare-edit.main/-main) *command-line-args*)}
   test  {:doc "Run the server and shared tests under bb"
@@ -17,6 +17,13 @@
                        (shell "node out/test.js"))}
   build {:doc "Build the browser bundle into resources/public/js"
          :task (shell "npx shadow-cljs release app")}
+  jar {:doc "Build the jar for Clojars into target. A version tag on HEAD gives the version, else 0.0.0-SNAPSHOT"
+       :depends [build]
+       :task (let [tag     (-> (shell {:out :string :err :string :continue true}
+                                      "git describe --tags --exact-match --match v[0-9]*")
+                               :out str/trim)
+                   version (if (str/blank? tag) "0.0.0-SNAPSHOT" (subs tag 1))]
+               (shell "clojure" "-T:build" "jar" ":version" (pr-str version)))}
   docstrings {:doc "Check every docstring against .claude/rules/docstrings.md; exits 1 on a problem"
               :extra-paths ["dev"]
               :task (apply (requiring-resolve 'bare-edit.docstrings/-main) *command-line-args*)}}}

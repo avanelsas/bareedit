@@ -103,7 +103,7 @@ Run **Open settings** from the command palette. It opens `~/.config/bareedit/con
 | Check docstrings | `bb docstrings` |
 | Build the browser bundle | `bb build` |
 
-The code is in `src/server` (the Babashka server), `src/app` (the browser app) and `src/shared` (the protocol both use), with tests in `test`.
+The code is in `src/server` (the Babashka server), `src/app` (the browser app) and `src/shared` (the protocol both use), with tests in `test`. How to make a release is in [docs/releasing.md](docs/releasing.md).
 
 ## License
 
