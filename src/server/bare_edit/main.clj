@@ -78,12 +78,22 @@
     (when-let [described (git "describe" "--tags" "--always")]
       (str described " (" (git "log" "-1" "--format=%cs") ")"))))
 
+(def pom-properties
+  "The resource where the jar keeps its Maven coordinate and version."
+  "META-INF/maven/com.github.avanelsas/bareedit/pom.properties")
+
+(defn properties-version
+  "The `version` entry of the properties file text `text`, or `nil` when it has none."
+  [text]
+  (some (fn [line] (second (re-matches #"\s*version\s*=\s*(\S+)\s*" line)))
+        (str/split-lines text)))
+
 (defn version
   "BareEdit's version, as the command prints it.
-  It is the one a release build put in `bare_edit/version.txt`, else the git version of the
-  source folder it runs from, else `\"unknown\"`."
+  It is the version in the jar's [[pom-properties]], else the git version of the source
+  folder it runs from, else `\"unknown\"`."
   []
-  (or (some-> (io/resource "bare_edit/version.txt") slurp str/trim not-empty)
+  (or (some-> (io/resource pom-properties) slurp properties-version)
       (some-> (source-root) git-version)
       "unknown"))
 

@@ -1,5 +1,8 @@
 {:paths ["src/app" "src/shared"]
  :deps {com.github.avanelsas/baredom {:mvn/version "4.21.1"}
         io.github.nextjournal/clojure-mode {:git/sha "71a9f962b064fbf2b56cda415222e05ae7e87b87"}}
- :aliases {:cljs {:extra-paths ["test"]
-                  :extra-deps {thheller/shadow-cljs {:mvn/version "3.5.14"}}}}}
+ :aliases {:cljs  {:extra-paths ["test"]
+                   :extra-deps {thheller/shadow-cljs {:mvn/version "3.5.14"}}}
+           :build {:deps {io.github.clojure/tools.build {:mvn/version "0.10.14"}
+                          slipset/deps-deploy {:mvn/version "0.2.5"}}
+                   :ns-default build}}}

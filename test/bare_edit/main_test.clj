@@ -51,6 +51,10 @@
   (doseq [option ["--build" "--no-open" "--version" "--help" "-v" "-h"]]
     (is (str/includes? main/usage option) option)))
 
+(deftest the-version-in-a-properties-file
+  (is (= "0.2.0" (main/properties-version "#Created by tools.build\nversion=0.2.0\ngroupId=com.github.avanelsas\n")))
+  (is (nil? (main/properties-version "groupId=com.github.avanelsas\n"))))
+
 (deftest the-version-from-a-checkout
   (is (re-matches #"\S+ \(\d{4}-\d{2}-\d{2}\)" (main/version))))
 
