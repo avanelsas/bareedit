@@ -1,6 +1,7 @@
 (ns build
   "Builds, installs and deploys the BareEdit jar, with `clojure -T:build jar`, `install` or
-  `deploy`. The version comes from the tag on `HEAD`. `bb jar` makes the release bundle first."
+  `deploy`. `jar` and `deploy` take the version from the tag on `HEAD`, and `install` always
+  uses [[snapshot]]. `bb jar` and `bb install` make the release bundle first."
   (:require [clojure.string :as str]
             [clojure.tools.build.api :as b]
             [deps-deploy.deps-deploy :as dd]))
@@ -121,16 +122,15 @@
   (println "Built" (build-jar! (tag->version (head-tag)))))
 
 (defn install
-  "Builds the jar and installs it in the local Maven repository, as a user's bbin would
-  fetch it."
+  "Builds the jar and installs it in the local Maven repository as [[snapshot]], to try it
+  before a release. It never uses the version of a tag, so it cannot replace a released jar."
   [_]
-  (let [version (tag->version (head-tag))]
-    (b/install {:basis     (no-deps-basis)
-                :lib       lib
-                :version   version
-                :jar-file  (build-jar! version)
-                :class-dir class-dir})
-    (println "Installed" lib version)))
+  (b/install {:basis     (no-deps-basis)
+              :lib       lib
+              :version   snapshot
+              :jar-file  (build-jar! snapshot)
+              :class-dir class-dir})
+  (println "Installed" lib snapshot))
 
 (defn deploy
   "Builds the jar and deploys it to Clojars, with the credentials in `CLOJARS_USERNAME` and

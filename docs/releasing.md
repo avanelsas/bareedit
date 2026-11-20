@@ -16,14 +16,11 @@ A release is a version tag on `main`. The tag starts a workflow that runs the ch
    - At the end of `CHANGELOG.md`, point `[Unreleased]` at `vX.Y.Z...HEAD` and add the link `[X.Y.Z]: https://github.com/avanelsas/bareedit/releases/tag/vX.Y.Z`.
    - In `README.md`, put the new version in the install command.
 
-3. **Check the jar locally.** Run the five checks in `CLAUDE.md`, then `bb install`. It builds the jar and installs it in the local Maven repository as `0.0.0-SNAPSHOT`, because there is no tag yet. Try it as a user would, in a folder of its own, so your own `bareedit` stays as it is:
+3. **Check the jar locally.** Run the five checks in `CLAUDE.md`, then `bb install`. It builds the jar and installs it in the local Maven repository as `0.0.0-SNAPSHOT`. Run the jar the way bbin runs it, from a project folder. This installs no command, so your own `bareedit` stays as it is:
 
    ```sh
-   export BABASHKA_BBIN_BIN_DIR=$(mktemp -d)
-   bbin install com.github.avanelsas/bareedit --mvn/version 0.0.0-SNAPSHOT
-   "$BABASHKA_BBIN_BIN_DIR/bareedit" --version
-   "$BABASHKA_BBIN_BIN_DIR/bareedit"
-   unset BABASHKA_BBIN_BIN_DIR
+   bb -Sdeps '{:deps {com.github.avanelsas/bareedit {:mvn/version "0.0.0-SNAPSHOT"}}}' -m avanelsas.bareedit --version
+   bb -Sdeps '{:deps {com.github.avanelsas/bareedit {:mvn/version "0.0.0-SNAPSHOT"}}}' -m avanelsas.bareedit
    ```
 
 4. **Merge the branch** through a pull request titled `Release X.Y.Z`.
@@ -47,12 +44,13 @@ A release is a version tag on `main`. The tag starts a workflow that runs the ch
    rm notes.md
    ```
 
-8. **Install it as a user would,** in a new terminal:
+8. **Check the published jar** the same way, with the version from Clojars:
 
    ```sh
-   bbin install com.github.avanelsas/bareedit --mvn/version X.Y.Z
-   bareedit --version
+   bb -Sdeps '{:deps {com.github.avanelsas/bareedit {:mvn/version "X.Y.Z"}}}' -m avanelsas.bareedit --version
    ```
+
+   To use the new version yourself, run the install command in the README.
 
 ## When something goes wrong
 
@@ -62,7 +60,8 @@ A release is a version tag on `main`. The tag starts a workflow that runs the ch
 ## How the pieces fit
 
 - `.github/workflows/release.yml` runs on a tag such as `v0.2.0`. It calls `ci.yml` for the checks, then runs `bb build` and `clojure -T:build deploy`.
-- `build.clj` has three functions, `jar`, `install` and `deploy`. Each builds the jar for the version of the tag on `HEAD`, without its `v`, or `0.0.0-SNAPSHOT` when there is none. `deploy` refuses a build with no tag. `bb jar` and `bb install` make the release bundle first, and the build refuses a development bundle.
+- `build.clj` has three functions, `jar`, `install` and `deploy`. `jar` and `deploy` build the jar for the version of the tag on `HEAD`, without its `v`. `jar` uses `0.0.0-SNAPSHOT` when there is no tag, and `deploy` refuses to run. `install` always uses `0.0.0-SNAPSHOT`, so a local build never replaces a released version in `~/.m2`. `bb jar` and `bb install` make the release bundle first, and the build refuses a development bundle.
 - The jar holds what `contents` in `build.clj` lists: `src/server`, `src/shared`, the page and the bundle. Its pom has no dependencies. `bareedit --version` reads the version from the jar's `pom.properties`.
 - bbin runs the namespace `avanelsas.bareedit`, after the group and the artifact, and names the command `bareedit`, after the artifact.
+- bbin 0.2.5 ignores `BABASHKA_BBIN_BIN_DIR` when the old folder `~/.babashka/bbin/bin` exists and `XDG_DATA_HOME` is not set. That is why the checks run the jar with `bb -Sdeps` instead of installing it.
 - bbin 0.2.5 has no `upgrade` command. A user upgrades with the install command and the new version, which replaces the old one.
