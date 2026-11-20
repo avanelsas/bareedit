@@ -31,8 +31,9 @@
   editor-view
   (atom {:view nil :shown nil}))
 
-(defonce ^{:doc "The WebSocket to the BareEdit server."}
-  socket
+(defonce ^{:doc "The function that sends a request, as EDN text, to the BareEdit server.
+  [[start!]] gets it from its `connect`."}
+  send-text
   (atom nil))
 
 (defonce ^{:doc "The editor's completion requests that wait for their answer.
@@ -49,8 +50,8 @@
   (fn [effect] (first effect)))
 
 (defmethod run-effect! :send [[_ req]]
-  (when-let [^js ws @socket]
-    (.send ws (p/encode req))))
+  (when-let [send @send-text]
+    (send (p/encode req))))
 
 (defmethod run-effect! :focus-editor [_]
   (some-> ^js (:view @editor-view) .focus))
@@ -179,16 +180,17 @@
                 x-command-palette/init x-form-field/init]]
     (init)))
 
-(defn- connect!
-  "Opens the WebSocket to the server and dispatches its events.
-  It connects with the startup token from the page URL."
-  []
+(defn connect
+  "Opens the WebSocket to the server and returns the function that sends on it.
+  It connects with the startup token from the page URL, and passes the socket's events
+  to `dispatch`."
+  [dispatch]
   (let [token (.get (js/URLSearchParams. (.. js/window -location -search)) "token")
         ws (js/WebSocket. (str "ws://" (.. js/window -location -host) "/ws?token=" token))]
-    (set! (.-onopen ws) #(dispatch! [:connected]))
-    (set! (.-onclose ws) #(dispatch! [:disconnected]))
-    (set! (.-onmessage ws) (fn [e] (dispatch! [:message (.-data e)])))
-    (reset! socket ws)))
+    (set! (.-onopen ws) #(dispatch [:connected]))
+    (set! (.-onclose ws) #(dispatch [:disconnected]))
+    (set! (.-onmessage ws) (fn [e] (dispatch [:message (.-data e)])))
+    (fn [text] (.send ws text))))
 
 (defn- page-config
   "The look and feel the server put on the page's `html` element, or `nil` when there is none."
@@ -196,14 +198,16 @@
   (let [cfg (some-> (.getAttribute js/document.documentElement "data-config") p/decode)]
     (when (map? cfg) cfg)))
 
-(defn init
-  "Starts the app and connects to the server.
-  It takes the look and feel from the page, so the first render already shows it, see
-  [[page-config]]. It registers the components, renders the page, mounts the editor and renders again on
-  every state change. It listens for keys, for window focus, and for leaving the page,
-  which warns while a buffer has unsaved changes. An effect kind without a method is
-  reported on the console."
-  []
+(defn start!
+  "Starts the app and connects it with `connect`.
+  `connect` takes [[dispatch!]] and returns a function that sends a request, as EDN text.
+  It passes `[:connected]`, `[:disconnected]` and each incoming
+  `[:message text]` to the function it was given. The app takes the look and feel from the
+  page, so the first render already shows it, see [[page-config]]. It registers the
+  components, renders the page, mounts the editor and renders again on every state change.
+  It listens for keys, for window focus, and for leaving the page, which warns while a
+  buffer has unsaved changes. An effect kind without a method is reported on the console."
+  [connect]
   (doseq [k steps/effect-kinds :when (nil? (get-method run-effect! k))]
     (js/console.error "run-effect! has no method for" (str k)))
   (register-components!)
@@ -220,4 +224,9 @@
                      (fn [^js e] (when (some steps/unsaved? (vals (:buffers @state)))
                                    (.preventDefault e)
                                    (set! (.-returnValue e) ""))))
-  (connect!))
+  (reset! send-text (connect dispatch!)))
+
+(defn init
+  "Starts the app, connected to the BareEdit server through a WebSocket."
+  []
+  (start! connect))

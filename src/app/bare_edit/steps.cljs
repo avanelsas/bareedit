@@ -30,12 +30,14 @@
   `:results-open?` says whether the column shows, and `:unfolded` holds the ids of the
   entries shown in full. `:conn` is `:connecting`, `:open` or `:closed`. `:config` is the
   user's look and feel, `{:preset :font-family :font-size}` from the server, or `nil` until
-  it arrives, and `:project` the project folder's name, the same way. `:repl` holds the
+  it arrives, and `:project` the project folder's name, the same way. `:read-only?` says
+  whether the server refuses every change to the project's files. `:repl` holds the
   last thing heard from the REPL of each session kind, see [[record-repl]]. `:unreadable`
   holds the folders the last path list could not read."
   {:conn :connecting
    :config nil
    :project nil
+   :read-only? false
    :repl {}
    :next-id 1
    :next-buffer 1
@@ -579,8 +581,8 @@
     (reduce #(toast %1 :warning %2) (change r assoc :config config) problems)
     (toast r :error message)))
 
-(defmethod on-reply :project [r _req {:keys [status name]}]
-  (cond-> r (= :ok status) (change assoc :project name)))
+(defmethod on-reply :project [r _req {:keys [status name read-only]}]
+  (cond-> r (= :ok status) (change assoc :project name :read-only? (true? read-only))))
 
 (defn unreadable-text
   "The message for `folders`, the project-relative folders the path list could not read.

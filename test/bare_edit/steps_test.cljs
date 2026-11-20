@@ -404,6 +404,10 @@
   (let [r  (run steps/initial-state [:connected])
         r2 (run (:state r) (reply-to r :ok {:name "demo"}))]
     (is (= "demo" (get-in r2 [:state :project])))
+    (is (false? (get-in r2 [:state :read-only?])))
+    (testing "a read-only project says so"
+      (is (true? (get-in (run (:state r) (reply-to r :ok {:name "demo" :read-only true}))
+                         [:state :read-only?]))))
     (testing "connecting again does not ask again"
       (is (not-any? #(= :project (:op (second %))) (:fx (run (:state r2) [:disconnected] [:connected])))))))
 

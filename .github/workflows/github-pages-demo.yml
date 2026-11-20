@@ -1,0 +1,61 @@
+name: GitHub Pages demo
+
+on:
+  push:
+    tags: ["v[0-9]*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages-demo
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build the demo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # the snapshot's version names the nearest tag, which needs the history
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - uses: DeLaGuardo/setup-clojure@13.4
+        with:
+          cli: 1.12.6.1673
+          bb: latest
+
+      - name: Install
+        run: npm ci
+
+      - name: Build the demo
+        run: bb github-pages-demo
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: target/github-pages-demo
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

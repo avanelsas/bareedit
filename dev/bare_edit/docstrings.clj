@@ -133,10 +133,11 @@
        sort))
 
 (defn -main
-  "Checks every source file under the folders in `args`, by default `src`, `test` and `dev`.
+  "Checks every source file under the folders in `args`, or under the default folders.
+  The default folders are `src`, `test`, `dev` and `github-pages-demo`.
   Prints each problem and exits with status 1 when there are any, so CI can run it."
   [& args]
-  (let [problems (mapcat file-problems (source-files (or (seq args) ["src" "test" "dev"])))]
+  (let [problems (mapcat file-problems (source-files (or (seq args) ["src" "test" "dev" "github-pages-demo"])))]
     (doseq [{:keys [file line var problem]} problems]
       (println (str file ":" line " " var ": " problem)))
     (println (case (count problems)

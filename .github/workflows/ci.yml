@@ -43,7 +43,7 @@ jobs:
         run: npm ci
 
       - name: Lint
-        run: clj-kondo --lint src test dev
+        run: clj-kondo --lint src test dev github-pages-demo
 
       - name: Docstrings
         run: bb docstrings
@@ -56,3 +56,6 @@ jobs:
 
       - name: Build the app
         run: npx shadow-cljs release app
+
+      - name: Build the GitHub Pages demo
+        run: npx shadow-cljs release github-pages-demo

@@ -191,6 +191,8 @@
         s      (assoc state :project "demo" :repl {:clj {:status :no-runtime :message "No runtime."}})
         bar    (page/status-bar s #(swap! events conj %))]
     (is (= "democonnectedClojure: no JS runtimeClojureScript: not used yetClojureLn 1, Col 1Commands" (text bar)))
+    (testing "a read-only project says so after its name"
+      (is (= "demoread-onlyconnected" (subs (text (page/status-bar (assoc s :read-only? true) identity)) 0 22))))
     (testing "a REPL's message is its tooltip"
       (is (= "No runtime." (some #(when (= "dot bad" (:class (second %))) (:title (second %)))
                                  (elements bar :span)))))

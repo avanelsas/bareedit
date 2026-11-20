@@ -28,7 +28,19 @@
     :save  {:id 1 :status :conflict}                       false
     :save  {:id 1 :status :running :message "x"}           false
     :interrupt {:id 4 :status :ok}                         true
-    :interrupt {:id 4 :status :ok :message "Keeps running."} true))
+    :interrupt {:id 4 :status :ok :message "Keeps running."} true
+    :project {:id 5 :status :ok :name "a"}                 true
+    :project {:id 5 :status :ok :name "a" :read-only true} true
+    :project {:id 5 :status :ok :name "a" :read-only "yes"} false)
+  (testing "an optional key of the wrong kind is named"
+    (is (= ["An :ok reply to :project needs :read-only to be true or false."]
+           (p/reply-problems :project {:id 5 :status :ok :name "a" :read-only "yes"})))))
+
+(deftest a-known-file
+  (testing "a file whose version the browser knows comes without its text"
+    (is (= {:version "v1"} (p/unless-known "v1" {:text "a" :version "v1"})))
+    (is (= {:text "a" :version "v2"} (p/unless-known "v1" {:text "a" :version "v2"})))
+    (is (= {:text "a" :version "v2"} (p/unless-known nil {:text "a" :version "v2"})))))
 
 (deftest kinds
   (are [msg k] (= k (p/kind msg))

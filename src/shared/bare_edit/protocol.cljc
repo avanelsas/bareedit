@@ -40,18 +40,33 @@
   (or (= :absent v) (string? v)))
 
 (def kinds
-  "The kinds a request value may be, each as a predicate and the words that name it."
-  {:string   [string?                                    "a string"]
-   :strings  [#(and (vector? %) (every? string? %))      "a vector of strings"]
-   :int      [int?                                       "an integer"]
-   :version  [version?                                   "a version (a hash string or :absent)"]
+  "The kinds a request value may be, each as a predicate, the words that name it and an example."
+  {:string   [string?                                    "a string"              "src/a.clj"]
+   :strings  [#(and (vector? %) (every? string? %))      "a vector of strings"   ["src/a.clj"]]
+   :int      [int?                                       "an integer"            1]
+   :version  [version?                                   "a version (a hash string or :absent)" :absent]
    :versions [#(and (map? %) (every? string? (keys %)) (every? version? (vals %)))
-              "a map of path to version"]
-   :ns       [#(or (nil? %) (string? %))                 "a namespace name or nil"]})
+              "a map of path to version"                 {"src/a.clj" :absent}]
+   :ns       [#(or (nil? %) (string? %))                 "a namespace name or nil" nil]
+   :boolean  [boolean?                                   "true or false"         true]})
+
+(defn unless-known
+  "The file `disk`, `{:text :version}`, without its `:text` when `known` is its version.
+  This is what a `:read` reply gives for each path: the browser already holds the text of a
+  version it names in `:known`, so only the version is sent."
+  [known {:keys [version] :as disk}]
+  (if (= known version) (dissoc disk :text) disk))
+
+(def default-config
+  "The look and feel when the settings name nothing: the preset `\"default\"`.
+  The fonts are then the preset's own."
+  {:preset "default"})
 
 (def ops
   "The operations, each with its request keys and their kinds, and its reply keys.
-  The reply keys are those of a reply whose status is `:ok`."
+  The reply keys are those of a reply whose status is `:ok`. `:optional` names the keys an
+  `:ok` reply may hold, each with its kind. A `:project` reply holds `:read-only` `true`
+  when the project's files cannot be changed."
   {:paths       {:request {}                                             :reply #{:paths :unreadable}}
    :read        {:request {:paths :strings :known :versions}             :reply #{:files}}
    :save        {:request {:path :string :text :string :version :version} :reply #{:version}}
@@ -64,7 +79,8 @@
    :config      {:request {}                                             :reply #{:config :problems}}
    :read-settings {:request {}                                           :reply #{:text :version}}
    :save-settings {:request {:text :string :version :version}            :reply #{:version}}
-   :project     {:request {}                                             :reply #{:name}}})
+   :project     {:request {}                                             :reply #{:name}
+                 :optional {:read-only :boolean}}})
 
 (def events
   "The events the server sends unasked."
@@ -114,7 +130,7 @@
 (defn reply-problems
   "The problems with `msg`, a reply to `op`, as sentences, or `nil` when it is well formed.
   It checks the integer `:id`, the `:status`, the `:message` of a reply that is not `:ok`,
-  and the reply keys of an `:ok` reply."
+  and the reply keys of an `:ok` reply, with the kind of each optional key it holds."
   [op {:keys [id status message] :as msg}]
   (seq (cond-> []
          (not (int? id))                        (conj "A reply needs the request's integer :id.")
@@ -124,7 +140,12 @@
          (= :ok status)
          (into (for [k (sort (get-in ops [op :reply]))
                      :when (not (contains? msg k))]
-                 (str "An :ok reply to " op " needs " k "."))))))
+                 (str "An :ok reply to " op " needs " k ".")))
+         (= :ok status)
+         (into (for [[k kind] (sort (get-in ops [op :optional]))
+                     :let [[ok? words] (kinds kind)]
+                     :when (and (contains? msg k) (not (ok? (get msg k))))]
+                 (str "An :ok reply to " op " needs " k " to be " words "."))))))
 
 ;; ── Kinds and wire format ───────────────────────────────────────────────────
 

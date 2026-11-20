@@ -3,6 +3,10 @@
                  :output-dir "resources/public/js"
                  :asset-path "js"
                  :modules {:main {:init-fn bare-edit.app/init}}}
+          :github-pages-demo {:target :browser
+                              :output-dir "target/github-pages-demo/js"
+                              :asset-path "js"
+                              :modules {:main {:init-fn bare-edit.github-pages-demo/init}}}
           :test {:target :node-test
                  :output-to "out/test.js"
                  :ns-regexp "bare-edit\\..*-test$"

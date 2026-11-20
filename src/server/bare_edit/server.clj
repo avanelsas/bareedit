@@ -70,17 +70,11 @@
 (defmethod handle :paths [{:keys [root]} {:keys [id]}]
   (p/reply id :ok (select-keys (files/listing root) [:paths :unreadable])))
 
-(defn- unless-known
-  "The file `disk`, `{:text :version}`, without its `:text` when `known` is its version.
-  The browser already holds that text, so only the version is sent."
-  [known {:keys [version] :as disk}]
-  (if (= known version) (dissoc disk :text) disk))
-
 (defmethod handle :read [{:keys [root]} {:keys [id known] rels :paths}]
   (if-let [bad (outside root rels)]
     (p/failure id :error (str "Not a file in this project: " bad))
     (p/reply id :ok {:files (into {} (for [rel rels]
-                                       [rel (unless-known (get known rel) (files/read-file root rel))]))})))
+                                       [rel (p/unless-known (get known rel) (files/read-file root rel))]))})))
 
 (defmethod handle :save [{:keys [root]} {:keys [id path text version]}]
   (if (outside root [path])
