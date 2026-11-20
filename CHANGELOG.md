@@ -7,6 +7,11 @@ the command's options and the keys may still change.
 
 ## [Unreleased]
 
+### Changed
+
+- **BareDOM 4.21.1.** Selecting a file in the tree is faster in a large folder. The command
+  palette scales with the interface size, and its scrollbar is dark in dark mode.
+
 ## [0.1.0] - 2026-11-19
 
 The first release.
