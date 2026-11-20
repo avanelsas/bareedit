@@ -14,16 +14,16 @@ A release is a version tag on `main`. The tag starts a workflow that runs the ch
 2. **Prepare the release on a branch** named `release-X.Y.Z`, from an up-to-date `main`:
    - In `CHANGELOG.md`, move the lines under `## [Unreleased]` to a new section `## [X.Y.Z] - YYYY-MM-DD`, with a sentence that sums up the release. Keep `## [Unreleased]` empty above it.
    - At the end of `CHANGELOG.md`, point `[Unreleased]` at `vX.Y.Z...HEAD` and add the link `[X.Y.Z]: https://github.com/avanelsas/bareedit/releases/tag/vX.Y.Z`.
-   - In `README.md`, put the new version in the install command.
+   - In `README.md`, put the new version in the install command. The first release on Clojars, 0.2.0, also replaces the install from a clone with the bbin command.
 
-3. **Check the jar locally.** Run the five checks in `CLAUDE.md`, then `bb jar`. The jar is `target/bareedit-0.0.0-SNAPSHOT.jar`, because there is no tag yet. To try it as a user would, copy the jar and `target/classes/META-INF/maven/com.github.avanelsas/bareedit/pom.xml` into `~/.m2/repository/com/github/avanelsas/bareedit/0.0.0-SNAPSHOT/` (the pom as `bareedit-0.0.0-SNAPSHOT.pom`), then:
+3. **Check the jar locally.** Run the five checks in `CLAUDE.md`, then `bb install`. It builds the jar and installs it in the local Maven repository as `0.0.0-SNAPSHOT`, because there is no tag yet. Try it as a user would:
 
    ```sh
    bbin install com.github.avanelsas/bareedit --mvn/version 0.0.0-SNAPSHOT
    bareedit --version
    ```
 
-   Afterwards, remove that folder from `~/.m2` and install the released version again.
+   Afterwards, install the released version again.
 
 4. **Merge the branch** through a pull request titled `Release X.Y.Z`.
 
@@ -36,7 +36,7 @@ A release is a version tag on `main`. The tag starts a workflow that runs the ch
    git push origin vX.Y.Z
    ```
 
-6. **Watch the release workflow** in the Actions tab. It runs the checks, builds the jar with the version from the tag, and deploys it to Clojars. The version shows on https://clojars.org/com.github.avanelsas/bareedit when it is done.
+6. **Watch the Release workflow** in the Actions tab. It runs the same checks as CI, then makes the release bundle, builds the jar with the version from the tag, and deploys it to Clojars. The version shows on https://clojars.org/com.github.avanelsas/bareedit when it is done.
 
 7. **Publish the GitHub release** with the changelog section of the version as its notes:
 
@@ -58,7 +58,8 @@ A release is a version tag on `main`. The tag starts a workflow that runs the ch
 
 ## How the pieces fit
 
-- `bb jar` makes the release build of the browser bundle, then runs `clojure -T:build jar` with the version. The version is the tag on `HEAD` without its `v`, or `0.0.0-SNAPSHOT` when there is none.
-- `build.clj` makes the jar from `src/server`, `src/shared`, `resources/public/index.html`, the bundle `resources/public/js/main.js` and `bare_edit/version.txt`, which `bareedit --version` reads. The jar has no dependencies.
+- `.github/workflows/release.yml` runs on a tag such as `v0.2.0`. It calls `ci.yml` for the checks, then runs `bb build` and `clojure -T:build deploy`.
+- `build.clj` has three functions, `jar`, `install` and `deploy`. Each builds the jar for the version of the tag on `HEAD`, without its `v`, or `0.0.0-SNAPSHOT` when there is none. `deploy` refuses a build with no tag. `bb jar` and `bb install` make the release bundle first, and the build refuses a development bundle.
+- The jar holds what `contents` in `build.clj` lists: `src/server`, `src/shared`, the page and the bundle. Its pom has no dependencies. `bareedit --version` reads the version from the jar's `pom.properties`.
 - bbin runs the namespace `avanelsas.bareedit`, after the group and the artifact, and names the command `bareedit`, after the artifact.
 - bbin 0.2.5 has no `upgrade` command. A user upgrades with the install command and the new version, which replaces the old one.
