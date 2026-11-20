@@ -12,6 +12,8 @@ A small, local, browser-based editor for Clojure and ClojureScript, with a file 
 
 **Status:** early and in daily use, tested on macOS. It runs on your machine only, for one user. Changes are listed in [CHANGELOG.md](CHANGELOG.md).
 
+**Read-Only Demo**: [Github Pages](https://avanelsas.github.io/bareedit/)
+
 ## Requirements
 
 - [Babashka](https://babashka.org), [bbin](https://github.com/babashka/bbin) and Java. Babashka uses Java to fetch the editor from Clojars the first time it runs.
