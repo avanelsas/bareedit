@@ -10,28 +10,20 @@ A small, local, browser-based editor for Clojure and ClojureScript, with a file 
 
 ![BareEdit with a Clojure file open and two results](docs/assets/screenshot.jpg)
 
-**Status:** early and in daily use, tested on macOS. It runs on your machine only, for one user, and is not on Clojars yet. Changes are listed in [CHANGELOG.md](CHANGELOG.md).
+**Status:** early and in daily use, tested on macOS. It runs on your machine only, for one user. Changes are listed in [CHANGELOG.md](CHANGELOG.md).
 
 ## Requirements
 
-- [Babashka](https://babashka.org) to run the editor.
-- Java, the [Clojure CLI](https://clojure.org/guides/install_clojure) and Node with npm, once, to build it.
+- [Babashka](https://babashka.org), [bbin](https://github.com/babashka/bbin) and Java. Babashka uses Java to fetch the editor from Clojars the first time it runs.
 - To evaluate code: an nREPL in your project for Clojure, or shadow-cljs for ClojureScript.
 
 ## Install
 
 ```sh
-git clone https://github.com/avanelsas/bareedit.git
-cd bareedit
-npm ci
-bb build
+bbin install com.github.avanelsas/bareedit --mvn/version 0.2.0
 ```
 
-Then add an alias to your shell, in `~/.zshrc` or `~/.bashrc`:
-
-```sh
-alias bareedit='bb --config /path/to/bareedit/bb.edn start'
-```
+This adds the `bareedit` command. To upgrade, run it again with the new version. To remove it, run `bbin uninstall bareedit`.
 
 ## Start
 
@@ -103,6 +95,17 @@ Run **Open settings** from the command palette. It opens `~/.config/bareedit/con
 | Check docstrings | `bb docstrings` |
 | Build the browser bundle | `bb build` |
 | Build the jar, or install it in `~/.m2` | `bb jar`, `bb install` |
+
+To run the editor from a clone, you also need the [Clojure CLI](https://clojure.org/guides/install_clojure) and Node with npm:
+
+```sh
+git clone https://github.com/avanelsas/bareedit.git
+cd bareedit
+npm ci
+bb build
+```
+
+Then add an alias to `~/.zshrc` or `~/.bashrc`: `alias bareedit='bb --config /path/to/bareedit/bb.edn start'`.
 
 The code is in `src/server` (the Babashka server), `src/app` (the browser app) and `src/shared` (the protocol both use), with tests in `test`. How to make a release is in [docs/releasing.md](docs/releasing.md).
 
