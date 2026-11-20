@@ -31,4 +31,6 @@ Docstrings follow `.claude/rules/docstrings.md`.
 
 **Commit messages and pull request titles state what changed and nothing else.** No trailers of any kind.
 
+**A pull request that changes what a user sees adds its line to `CHANGELOG.md`, under Unreleased.** A release moves those lines under its version.
+
 **BareDOM is asked, never edited.** BareDOM is published and keeps its own release cycle. When BareEdit needs something from it, say what it would have to gain and ask. A UI component comes from BareDOM first; write one here only when BareDOM cannot provide it.

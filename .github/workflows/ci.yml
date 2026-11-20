@@ -24,7 +24,7 @@ jobs:
 
       - uses: DeLaGuardo/setup-clojure@13.4
         with:
-          cli: latest
+          cli: 1.12.6.1673
           bb: latest
           clj-kondo: latest
 
