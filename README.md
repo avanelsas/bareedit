@@ -41,20 +41,7 @@ The editor opens in your browser and reaches only that folder. Closing the brows
 
 ## Keys
 
-`Mod` is Cmd on macOS and Ctrl elsewhere.
-
-| Keys | Command |
-|---|---|
-| `Mod-Shift-p` or `F1` | Command palette: every command, with its keys |
-| `Mod-p` | Go to file |
-| `Mod-s` / `Mod-Alt-s` | Save / save all |
-| `Mod-Enter` | Evaluate the form at the cursor |
-| `Mod-Shift-Enter` | Evaluate the top-level form |
-| `Mod-.` | Interrupt the evaluation |
-| `F2` | Rename the file |
-| `Alt-w`, `Alt-[`, `Alt-]` | Close, previous and next tab |
-| `Mod-f` | Find and replace |
-| `Ctrl-Shift-0`, `Ctrl-Shift-]` | Slurp and barf forward (`9` and `[` go backward) |
+`Mod` is Cmd on macOS and Ctrl elsewhere. `Mod-Shift-p` or `F1` opens the command palette, which lists every command with its keys. The default keys are in [docs/usage.md](docs/usage.md#keys).
 
 ## Connect a REPL
 
@@ -77,40 +64,11 @@ Code is evaluated in its file's namespace. When that namespace is not loaded yet
 
 ## Settings
 
-Run **Open settings** from the command palette. It opens `~/.config/bareedit/config.edn`, which lists every setting with its default as a comment. Saving applies it at once.
-
-| Setting | What it sets |
-|---|---|
-| `:preset` | The colour theme: `default`, `ocean`, `forest`, `sunset`, `neo-brutalist`, `aurora`, `mono-ai` or `warm-mineral` |
-| `:ui-font-size` | The size of the interface, 12 to 24 pixels |
-| `:font-family`, `:font-size` | The font of the code |
-| `:ruler` | The column of the guide line, 80 by default, or `false` |
-| `:syntax` | Code colours, for light and dark mode apart |
+Run **Open settings** from the command palette. It opens `~/.config/bareedit/config.edn`, which lists every setting with its default as a comment. Saving applies it at once. What each setting does is in [docs/usage.md](docs/usage.md#settings).
 
 ## Development
 
-| Task | Command |
-|---|---|
-| Server and shared tests (bb) | `bb test` |
-| Browser and shared tests (Node) | `bb cljs-test` |
-| Lint | `clj-kondo --lint src test dev github-pages-demo` |
-| Check docstrings | `bb docstrings` |
-| Build the browser bundle | `bb build` |
-| Build the jar, or install it in `~/.m2` | `bb jar`, `bb install` |
-| Build the read-only demo for GitHub Pages into `target/github-pages-demo` | `bb github-pages-demo` |
-
-To run the editor from a clone, you also need the [Clojure CLI](https://clojure.org/guides/install_clojure) and Node with npm:
-
-```sh
-git clone https://github.com/avanelsas/bareedit.git
-cd bareedit
-npm ci
-bb build
-```
-
-Then add an alias to `~/.zshrc` or `~/.bashrc`: `alias bareedit='bb --config /path/to/bareedit/bb.edn start'`.
-
-The code is in `src/server` (the Babashka server), `src/app` (the browser app) and `src/shared` (the protocol both use), with tests in `test`. `github-pages-demo` holds the read-only demo, which runs the browser app with a stand-in for the server. How to make a release is in [docs/releasing.md](docs/releasing.md).
+To build BareEdit from a clone or work on it, see [docs/development.md](docs/development.md).
 
 ## License
 

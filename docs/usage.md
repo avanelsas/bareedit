@@ -2,6 +2,25 @@
 
 The details behind the [README](../README.md).
 
+## Keys
+
+`Mod` is Cmd on macOS and Ctrl elsewhere. The command palette (`Mod-Shift-p` or `F1`) lists every command with its keys.
+
+| Keys | Command |
+|---|---|
+| `Mod-Shift-p` or `F1` | Command palette: every command, with its keys |
+| `Mod-p` | Go to file |
+| `Mod-s` / `Mod-Alt-s` | Save / save all |
+| `Mod-Enter` | Evaluate the form at the cursor |
+| `Mod-Shift-Enter` | Evaluate the top-level form |
+| `Mod-.` | Interrupt the evaluation |
+| `F2` | Rename the file |
+| `Alt-w`, `Alt-[`, `Alt-]` | Close, previous and next tab |
+| `Mod-f` | Find and replace |
+| `Ctrl-Space` | Show completions |
+
+The keys for structural editing are in [Structural editing](#structural-editing).
+
 ## Evaluation
 
 - **Evaluate form** (`Mod-Enter`) evaluates the selection, or else the form that ends at the cursor, or else the innermost form around it.
@@ -51,11 +70,11 @@ The file's extension decides how it is edited. Clojure files (`.clj`, `.cljs`, `
 
 ## Settings
 
-The settings file is `~/.config/bareedit/config.edn`, one for every project. **Open settings** shows every setting with its default value as a comment.
+Run **Open settings** from the command palette. It opens the settings file, `~/.config/bareedit/config.edn`, one for every project, with every setting and its default value as a comment. Saving applies it at once.
 
-- **`:preset`** has light and dark colours, and the system setting picks between them.
+- **`:preset`** is the colour theme: `default`, `ocean`, `forest`, `sunset`, `neo-brutalist`, `aurora`, `mono-ai` or `warm-mineral`. Each has light and dark colours, and the system setting picks between them.
 - **`:ui-font-size`** scales the whole interface, keeping each part's size relative to the others. Without it, the browser's default is used, normally 16.
 - **`:font-family`** and **`:font-size`** set the editor and the results column, and do not follow `:ui-font-size`.
-- **`:ruler`** is a column from 40 to 200, or `false`. Long lines still wrap at the window's edge.
+- **`:ruler`** is the column of the guide line, from 40 to 200, or `false` for none. It is 80 by default. Long lines still wrap at the window's edge.
 - **`:syntax`** overrides the colours `:comment`, `:keyword`, `:string`, `:constant`, `:function`, `:type` and `:tag`, each a CSS colour, under `:light` and `:dark` apart.
 - A wrong value or an unknown key is ignored, and a warning says so. After editing the file in another editor, reload the page (`Mod-r`).

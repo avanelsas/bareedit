@@ -1,6 +1,6 @@
 # BareEdit
 
-A small, local, browser-based editor for Clojure and ClojureScript. A Babashka server (http-kit, one WebSocket, EDN messages) serves a ClojureScript page built with shadow-cljs, BareDOM web components and CodeMirror 6. See README.md for the tasks and the layout.
+A small, local, browser-based editor for Clojure and ClojureScript. A Babashka server (http-kit, one WebSocket, EDN messages) serves a ClojureScript page built with shadow-cljs, BareDOM web components and CodeMirror 6. See docs/development.md for the tasks and the layout.
 
 ## How the code is shaped
 
