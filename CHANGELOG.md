@@ -7,6 +7,15 @@ the command's options and the keys may still change.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-20
+
+BareEdit installs from Clojars with bbin, and the file tree is faster in large folders.
+
+### Added
+
+- **Install with bbin.** `bbin install com.github.avanelsas/bareedit --mvn/version 0.2.0`
+  adds the `bareedit` command. Building from a clone is no longer needed.
+
 ### Changed
 
 - **BareDOM 4.21.1.** Selecting a file in the tree is faster in a large folder. The command
@@ -41,5 +50,6 @@ The first release.
 - **Command line.** `--help`, `--version`, `--no-open` and `--build`. An unknown option
   stops with a message.
 
-[Unreleased]: https://github.com/avanelsas/bareedit/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/avanelsas/bareedit/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/avanelsas/bareedit/releases/tag/v0.2.0
 [0.1.0]: https://github.com/avanelsas/bareedit/releases/tag/v0.1.0

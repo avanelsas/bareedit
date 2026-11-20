@@ -12,18 +12,19 @@ A release is a version tag on `main`. The tag starts a workflow that runs the ch
 1. **Choose the version.** Versions follow [Semantic Versioning](https://semver.org). Before 1.0, a release with new features raises the minor number (`0.2.0` to `0.3.0`), and a release with fixes only raises the patch number (`0.2.0` to `0.2.1`).
 
 2. **Prepare the release on a branch** named `release-X.Y.Z`, from an up-to-date `main`:
-   - In `CHANGELOG.md`, move the lines under `## [Unreleased]` to a new section `## [X.Y.Z] - YYYY-MM-DD`, with a sentence that sums up the release. Keep `## [Unreleased]` empty above it.
+   - In `CHANGELOG.md`, move the lines under `## [Unreleased]` to a new section `## [X.Y.Z] - YYYY-MM-DD`, with a sentence that sums up the release. The date is the day of the tag. Correct it before the merge if the tag moves to another day. Keep `## [Unreleased]` empty above it.
    - At the end of `CHANGELOG.md`, point `[Unreleased]` at `vX.Y.Z...HEAD` and add the link `[X.Y.Z]: https://github.com/avanelsas/bareedit/releases/tag/vX.Y.Z`.
-   - In `README.md`, put the new version in the install command. The first release on Clojars, 0.2.0, also replaces the install from a clone with the bbin command.
+   - In `README.md`, put the new version in the install command.
 
-3. **Check the jar locally.** Run the five checks in `CLAUDE.md`, then `bb install`. It builds the jar and installs it in the local Maven repository as `0.0.0-SNAPSHOT`, because there is no tag yet. Try it as a user would:
+3. **Check the jar locally.** Run the five checks in `CLAUDE.md`, then `bb install`. It builds the jar and installs it in the local Maven repository as `0.0.0-SNAPSHOT`, because there is no tag yet. Try it as a user would, in a folder of its own, so your own `bareedit` stays as it is:
 
    ```sh
+   export BABASHKA_BBIN_BIN_DIR=$(mktemp -d)
    bbin install com.github.avanelsas/bareedit --mvn/version 0.0.0-SNAPSHOT
-   bareedit --version
+   "$BABASHKA_BBIN_BIN_DIR/bareedit" --version
+   "$BABASHKA_BBIN_BIN_DIR/bareedit"
+   unset BABASHKA_BBIN_BIN_DIR
    ```
-
-   Afterwards, install the released version again.
 
 4. **Merge the branch** through a pull request titled `Release X.Y.Z`.
 
@@ -38,10 +39,12 @@ A release is a version tag on `main`. The tag starts a workflow that runs the ch
 
 6. **Watch the Release workflow** in the Actions tab. It runs the same checks as CI, then makes the release bundle, builds the jar with the version from the tag, and deploys it to Clojars. The version shows on https://clojars.org/com.github.avanelsas/bareedit when it is done.
 
-7. **Publish the GitHub release** with the changelog section of the version as its notes:
+7. **Publish the GitHub release,** with the section of the version in `CHANGELOG.md` as its notes:
 
    ```sh
+   awk '/^## \[X.Y.Z\]/ {on=1; next} /^## \[/ {on=0} on' CHANGELOG.md > notes.md
    gh release create vX.Y.Z --title "BareEdit X.Y.Z" --notes-file notes.md
+   rm notes.md
    ```
 
 8. **Install it as a user would,** in a new terminal:
