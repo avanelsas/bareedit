@@ -41,17 +41,25 @@
   (or (= :absent v) (string? v)))
 
 (def kinds
-  "The kinds a request value may be, each as a predicate, the words that name it and an example."
-  {:string   [string?                                    "a string"              "src/a.clj"]
-   :strings  [#(and (vector? %) (every? string? %))      "a vector of strings"   ["src/a.clj"]]
-   :int      [int?                                       "an integer"            1]
-   :version  [version?                                   "a version (a hash string or :absent)" :absent]
-   :versions [#(and (map? %) (every? string? (keys %)) (every? version? (vals %)))
-              "a map of path to version"                 {"src/a.clj" :absent}]
-   :ns       [#(or (nil? %) (string? %))                 "a namespace name or nil" nil]
-   :boolean  [boolean?                                   "true or false"         true]
-   :query    [search/query?                              "a query (a map of :text, :case, :regexp and :word)"
-              search/blank-query]})
+  "The kinds a request or reply value may be, each as `{:valid? :words :example}`.
+  `:valid?` is the predicate a value of the kind passes, `:words` name the kind in a problem,
+  and `:example` is a value of the kind."
+  {:string   {:valid? string?
+              :words "a string" :example "src/a.clj"}
+   :strings  {:valid? #(and (vector? %) (every? string? %))
+              :words "a vector of strings" :example ["src/a.clj"]}
+   :int      {:valid? int?
+              :words "an integer" :example 1}
+   :version  {:valid? version?
+              :words "a version (a hash string or :absent)" :example :absent}
+   :versions {:valid? #(and (map? %) (every? string? (keys %)) (every? version? (vals %)))
+              :words "a map of path to version" :example {"src/a.clj" :absent}}
+   :ns       {:valid? #(or (nil? %) (string? %))
+              :words "a namespace name or nil" :example nil}
+   :boolean  {:valid? boolean?
+              :words "true or false" :example true}
+   :query    {:valid? search/query?
+              :words "a query (a map of :text, :case, :regexp and :word)" :example search/blank-query}})
 
 (defn unless-known
   "The file `disk`, `{:text :version}`, without its `:text` when `known` is its version.
@@ -129,8 +137,8 @@
            (not (keyword? op))   (conj "A request needs an :op keyword.")
            (and (keyword? op) (nil? spec)) (conj (str "Unknown operation " op "."))
            spec (into (for [[k kind] (sort (:request spec))
-                            :let [[ok? words] (kinds kind)]
-                            :when (not (and (contains? msg k) (ok? (get msg k))))]
+                            :let [{:keys [valid? words]} (kinds kind)]
+                            :when (not (and (contains? msg k) (valid? (get msg k))))]
                         (str "Operation " op " needs " k ", " words ".")))))))
 
 (defn reply-problems
@@ -149,8 +157,8 @@
                  (str "An :ok reply to " op " needs " k ".")))
          (= :ok status)
          (into (for [[k kind] (sort (get-in ops [op :optional]))
-                     :let [[ok? words] (kinds kind)]
-                     :when (and (contains? msg k) (not (ok? (get msg k))))]
+                     :let [{:keys [valid? words]} (kinds kind)]
+                     :when (and (contains? msg k) (not (valid? (get msg k))))]
                  (str "An :ok reply to " op " needs " k " to be " words "."))))))
 
 ;; ── Kinds and wire format ───────────────────────────────────────────────────
