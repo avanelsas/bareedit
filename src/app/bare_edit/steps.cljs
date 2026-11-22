@@ -698,7 +698,7 @@
   [{s :state :as r} sym {:keys [status message info]}]
   (let [plain (model/source-path (:file info))
         line  (parse-long (str (:line info)))
-        found (model/definition plain (:paths s))]
+        found (model/definition plain (model/path-index (:paths s)))]
     (cond
       (not= :ok status)  (toast r :error message)
       (empty? info)      (toast r :info (str sym " is not loaded. Evaluate its namespace first."))
@@ -807,6 +807,8 @@
     namespace; any other file, or no connection, answers `nil` at once.
   - `[:jump-to id]` goes to the code of the results entry `id`: to its line, if it has one,
     when its file is open, or else it opens the file.
+  - `[:open-location path line]` opens the project file `path` at `line`, for a source
+    location named in an entry's output.
   - `[:find-set k v]` sets the option or text `k` of the open find bar's query to `v`,
     one of the keys of [[bare-edit.search/blank-query]], and searches the project again
     in the project scope.
@@ -987,6 +989,9 @@
 
 (defmethod step :unfold [r [_ id]]
   (change r update :unfolded #(if (% id) (disj % id) (conj % id))))
+
+(defmethod step :open-location [r [_ path line]]
+  (open-at r path line))
 
 (defmethod step :jump-to [{s :state :as r} [_ id]]
   (let [{:keys [path line]} (some #(when (= id (:id %)) %) (:results s))

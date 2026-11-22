@@ -1,9 +1,9 @@
 (ns bare-edit.model-test
   "Tests the pure functions over the editor's files.
   They build the file tree, apply the rule for files changed on disk, read the code of a
-  file and find the project file of a definition."
+  file and find the source files that the REPL names."
   (:require [bare-edit.model :as model]
-            [clojure.test :refer [deftest is are]]))
+            [clojure.test :refer [deftest is are testing]]))
 
 (deftest tree-items
   (is (= [{:id "src" :label "src"
@@ -133,7 +133,7 @@
 
 (deftest definitions
   (let [paths ["src/a/core.clj" "test/a/core.clj" "src/b.clj" "b.clj" "dev/user.clj"]]
-    (are [file found] (= found (model/definition file paths))
+    (are [file found] (= found (model/definition file (model/path-index paths)))
       "src/a/core.clj"                         {:path "src/a/core.clj"}
       "src/b.clj"                              {:path "src/b.clj"}
       "user.clj"                               {:path "dev/user.clj"}
@@ -153,3 +153,30 @@
     "jar:file:/m2/clojure.jar!/clojure/string.clj"     "clojure/string.clj"
     "clojure/string.clj"                               "clojure/string.clj"
     nil                                                nil))
+
+(deftest source-locations
+  (let [location (fn [text] (filter map? (model/source-pieces text)))]
+    (testing "where Clojure's errors and stack traces name source files"
+      (are [text found] (= found (map (juxt :text :file :line) (location text)))
+        "Execution error (ArithmeticException) at demo.core/boom (core.clj:4).\nDivide by zero\n"
+        [["core.clj:4" "demo/core.clj" 4]]
+        "Execution error (ExceptionInfo) at my-app.web-server/start (web_server.clj:9)."
+        [["web_server.clj:9" "my_app/web_server.clj" 9]]
+        "Execution error (ArithmeticException) at user/f (other.clj:5)."
+        [["other.clj:5" "other.clj" 5]]
+        "Syntax error macroexpanding clojure.core/let at (src/demo/other.clj:7:1).\n[x] - failed"
+        [["src/demo/other.clj:7:1" "src/demo/other.clj" 7]]
+        "\tat demo.core$boom.invokeStatic(core.clj:4)\n\tat clojure.lang.Numbers.divide(Numbers.java:190)"
+        [["core.clj:4" "demo/core.clj" 4] ["Numbers.java:190" "clojure/lang/Numbers.java" 190]]
+        "    demo.core/boom (core.clj:4)"
+        [["core.clj:4" "demo/core.clj" 4]]
+        "at user$eval2331.invokeStatic(NO_SOURCE_FILE:1)"  []
+        "(+ 1 2) is (3), see (notes:2)"                    []))
+    (testing "the pieces give the text back"
+      (let [text "at demo.core/boom (core.clj:4).\nmore"]
+        (is (= text (apply str (map #(if (map? %) (:text %) %) (model/source-pieces text)))))
+        (is (= ["at demo.core/boom (" "core.clj:4" ")" ".\nmore"]
+               (map #(if (map? %) (:text %) %) (model/source-pieces text))))))
+    (testing "text with no location is one piece, and no text none"
+      (is (= ["plain"] (model/source-pieces "plain")))
+      (is (= [] (model/source-pieces ""))))))

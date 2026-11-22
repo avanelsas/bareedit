@@ -1,7 +1,7 @@
 (ns bare-edit.model
   "Pure functions over plain values for the editor's files.
   They build the file tree, rank the file palette, check the path of a new file, decide
-  what happens to a file changed on disk, and find the project file of a definition."
+  what happens to a file changed on disk, and find the source files that the REPL names."
   (:require [clojure.string :as str]))
 
 (defn- name-pieces
@@ -226,17 +226,25 @@
         (str/starts-with? file "jar:")  (or (second (str/split file #"!/" 2)) file)
         :else                           file))
 
+(defn path-index
+  "The project paths `paths` grouped by file name, the index [[definition]] looks in."
+  [paths]
+  (group-by file-name paths))
+
 (defn definition
-  "The project file that `file`, a plain path where a var is defined, names among `paths`.
-  The first rule that fits decides: a project path for code evaluated in the editor is
-  that path, an absolute path is the longest project path it ends with, and a path
-  relative to a source folder, as `require` loads, is the project path that ends with it.
-  Returns `{:path path}`, `{:ambiguous paths}` when several project paths end with a
+  "The project file that `file`, a plain path where a var is defined, names in `index`.
+  `index` is the project's paths grouped by file name, see [[path-index]]. Every rule
+  matches the whole file name, so only the paths with the file name of `file` are
+  candidates. The first rule that fits decides: a project path for code evaluated in the
+  editor is that path, an absolute path is the longest project path it ends with, and a
+  path relative to a source folder, as `require` loads, is the project path that ends with
+  it. Returns `{:path path}`, `{:ambiguous paths}` when several project paths end with a
   relative path, or `nil` when none fits, as for a file in a jar or code typed at a REPL.
   nREPL's URLs are made plain paths first, see [[source-path]]."
-  [file paths]
+  [file index]
   (when (seq file)
-    (let [exact    (some #{file} paths)
+    (let [paths    (get index (file-name file))
+          exact    (some #{file} paths)
           absolute (str/starts-with? file "/")
           longest  (when absolute
                      (->> paths (filter #(str/ends-with? file (str "/" %))) (sort-by count) last))
@@ -245,3 +253,46 @@
             longest                {:path longest}
             (= 1 (count relative)) {:path (first relative)}
             (seq relative)         {:ambiguous (vec relative)}))))
+
+(def ^:private location
+  "A source location in a stack trace or an error, `(file:line)` or `(file:line:column)`.
+  The file has an extension and may be a path. The word before the parentheses, if any,
+  is the namespace or class whose code it is."
+  #"(\S*?)\s?\(([^()\s:]+\.[A-Za-z]+):(\d+)(?::\d+)?\)")
+
+(defn- owner-folder
+  "The folder where the code of `owner`, the word before a location, lives, or `nil`.
+  A Clojure `ns/fn` lives in the folder of its namespace, with `-` as `_`. A Java
+  `package.Class$fn.method` lives in the folder of its package."
+  [owner]
+  (let [all-but-last (fn [dotted] (butlast (str/split dotted #"\.")))]
+    (cond (str/includes? owner "/")
+          (let [ns (first (str/split owner #"/"))]
+            (str/join "/" (map #(str/replace % "-" "_") (all-but-last ns))))
+          (str/includes? owner ".")
+          (let [class   (str/join "." (all-but-last owner))
+                outer   (first (str/split class #"\$"))
+                package (all-but-last outer)]
+            (str/join "/" package)))))
+
+(defn source-pieces
+  "The text `text` cut into pieces at the source locations it names, in order.
+  A piece is a string, or a map `{:text :file :line}` for a location: `:text` is how it is
+  written, such as `core.clj:4`, and `:file` its path, a project path when the text gives
+  one, or else a path relative to a source folder worked out from the namespace or class
+  before it, so `demo.core/boom (core.clj:4)` names `demo/core.clj`."
+  [text]
+  (loop [rest-text (str text) pieces []]
+    (if-let [[whole owner file line] (re-find location rest-text)]
+      (let [i      (str/index-of rest-text whole)
+            open   (+ i (str/index-of whole "("))
+            close  (+ i (count whole))
+            folder (when-not (str/includes? file "/") (owner-folder owner))]
+        (recur (subs rest-text close)
+               (conj pieces
+                     (subs rest-text 0 (inc open))
+                     {:text (subs rest-text (inc open) (dec close))
+                      :file (if (seq folder) (str folder "/" file) file)
+                      :line (parse-long line)}
+                     ")")))
+      (filterv #(not= "" %) (conj pieces rest-text)))))

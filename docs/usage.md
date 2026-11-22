@@ -34,7 +34,7 @@ The keys for structural editing are in [Structural editing](#structural-editing)
 
 ## Results
 
-Each evaluation gets an entry in the results column, newest first, with its output, its value and any error. Values are pretty-printed, and a long value is folded behind a button. A click on an entry's header goes to its code. **Clear results** and **Toggle results column** are in the palette.
+Each evaluation gets an entry in the results column, newest first, with its output, its value and any error. Values are pretty-printed, and a long value is folded behind a button. A click on an entry's header goes to its code. In output and errors, a place in a project file, such as `core.clj:4` in `at demo.core/boom (core.clj:4)` or in a stack trace printed with `clojure.repl/pst`, is a link that opens the file at that line. A place outside the project, such as `Numbers.java:190`, stays text. **Clear results** and **Toggle results column** are in the palette.
 
 ## Completion, docs and definitions
 
