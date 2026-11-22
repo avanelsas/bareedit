@@ -7,6 +7,12 @@ the command's options and the keys may still change.
 
 ## [Unreleased]
 
+### Added
+
+- **Go to definition** (`F12`). It opens the file where the symbol at the cursor is
+  defined, at its line, from the REPL's answer. A definition outside the project is named
+  in a message.
+
 ## [0.3.0] - 2026-11-22
 
 BareEdit finds in the whole project, in a find bar of its own, and has a read-only demo on

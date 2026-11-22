@@ -345,6 +345,51 @@
     (let [r2 (run (:state r) (reply-to r :ok {:info {:name "map"}}))]
       (is (= {:name "map"} (:info (first (get-in r2 [:state :results]))))))))
 
+(deftest going-to-definitions
+  (let [s (at-cursor (opened "") "(ns a.b)\n(fo|o 1)")
+        r (run s [:command (command :go-to-definition)])
+        [[_ req]] (:fx r)
+        answer (fn [extra] (run (:state r) (reply-to r :ok extra)))]
+    (testing "it asks nREPL about the symbol, with no results entry"
+      (is (= {:op :lookup :path "src/a.clj" :sym "foo" :ns "a.b"} (dissoc req :id)))
+      (is (empty? (get-in r [:state :results]))))
+    (testing "a definition in a project file opens it at its line"
+      (let [r2 (answer {:info {:file "b.clj" :line 12}})]
+        (is (= "src/b.clj" (get-in r2 [:state :buffers 2 :path])))
+        (is (= 12 (get-in r2 [:state :buffers 2 :goto])))
+        (is (empty? (get-in r2 [:state :results])))))
+    (testing "a file: URL, as nREPL gives for code loaded by require, names a project file"
+      (is (= "src/b.clj" (get-in (answer {:info {:file "file:/Users/me/proj/src/b.clj" :line 2}})
+                                 [:state :buffers 2 :path]))))
+    (testing "with no line, the file opens at the top"
+      (is (= 1 (get-in (answer {:info {:file "src/b.clj"}}) [:state :buffers 2 :goto]))))
+    (testing "in the open file, the cursor moves"
+      (is (= [[:goto 3]] (:fx (answer {:info {:file "src/a.clj" :line "3"}})))))
+    (testing "a symbol not loaded, or defined outside the project, is a toast"
+      (doseq [[info text] [[{} "foo is not loaded. Evaluate its namespace first."]
+                           [{:file "clojure/core.clj" :line 4}
+                            "foo is defined in clojure/core.clj, line 4, outside the project."]
+                           [{:file "NO_SOURCE_PATH" :line 1}
+                            "foo is defined in NO_SOURCE_PATH, line 1, outside the project."]
+                           [{:file "clojure/core.clj"}
+                            "foo is defined in clojure/core.clj, outside the project."]
+                           [{:file "jar:file:/m2/clojure.jar!/clojure/core.clj" :line 4}
+                            "foo is defined in clojure/core.clj, line 4, outside the project."]]]
+        (is (= [[:toast :info text]] (:fx (answer {:info info}))))))
+    (testing "a file that several project paths end with names them all"
+      (let [s2 (assoc s :paths ["src/a.clj" "src/x/c.clj" "test/x/c.clj"])
+            r2 (run s2 [:command (command :go-to-definition)])]
+        (is (= [[:toast :info "x/c.clj could be src/x/c.clj or test/x/c.clj."]]
+               (:fx (run (:state r2) (reply-to r2 :ok {:info {:file "x/c.clj" :line 1}})))))))
+    (testing "a failed lookup shows its message"
+      (is (= [[:toast :error "No REPL."]]
+             (:fx (run (:state r) [:message (p/encode (p/failure (:id req) :unavailable "No REPL."))])))))
+    (testing "a file that is not Clojure is refused"
+      (let [s2 (assoc-in s [:buffers 1 :path] "src/a.cljs")]
+        (is (= [steps/definition-refusal] (:fx (run s2 [:command (command :go-to-definition)]))))))
+    (testing "with no symbol at the cursor, nothing happens"
+      (is (= [] (:fx (run (at-cursor (opened "") "|") [:command (command :go-to-definition)])))))))
+
 (deftest the-results-column
   (let [s (-> (opened "") (steps/add-entry {:id 7 :kind :eval :path "src/a.clj" :line 3 :status :running}))]
     (testing "a disconnect leaves no entry running"

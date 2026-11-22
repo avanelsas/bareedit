@@ -15,6 +15,7 @@ The details behind the [README](../README.md).
 | `Mod-Shift-Enter` | Evaluate the top-level form |
 | `Mod-.` | Interrupt the evaluation |
 | `F2` | Rename the file |
+| `F12` | Go to the definition of the symbol at the cursor |
 | `Alt-w`, `Alt-[`, `Alt-]` | Close, previous and next tab |
 | `Mod-f` | Find and replace in the file |
 | `Mod-Shift-f` | Find in the project |
@@ -35,9 +36,11 @@ The keys for structural editing are in [Structural editing](#structural-editing)
 
 Each evaluation gets an entry in the results column, newest first, with its output, its value and any error. Values are pretty-printed, and a long value is folded behind a button. A click on an entry's header goes to its code. **Clear results** and **Toggle results column** are in the palette.
 
-## Completion and docs
+## Completion, docs and definitions
 
 In `.clj` and `.cljc` files, completions come from the REPL, with the kind and namespace of each, and **Show docs** shows the docs of the symbol at the cursor. Without a REPL, and in every other file, completion offers the words of the open file. `Ctrl-Space` shows completions on demand.
+
+**Go to definition** (`F12`) opens the file where the symbol at the cursor is defined, at its line. It asks the REPL, so it works in `.clj` and `.cljc` files, for code that is loaded. A definition outside the project, such as in `clojure.core` or a library, is named in a message, since the editor opens project files only. So is a file that two project paths could be, such as `a/core.clj` under both `src` and `test`.
 
 ## ClojureScript
 
