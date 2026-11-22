@@ -32,6 +32,11 @@
     (is (= {"src/a.clj" {:version "v1"}}
            (:files (ask :read {:paths ["src/a.clj"] :known {"src/a.clj" "v1"}}))))))
 
+(deftest searching
+  (is (= {:id 1 :status :ok :matches [{:path "src/a.clj" :line 1 :text "(ns a)"}] :more false}
+         (ask :search {:query {:text "ns" :case false :regexp false :word false}})))
+  (is (= :error (:status (ask :search {:query {:text "(" :case false :regexp true :word false}})))))
+
 (deftest a-missing-snapshot
   (let [s {:problem "Could not load the demo's files: the server answered 404."}]
     (testing "the files say why they are missing"

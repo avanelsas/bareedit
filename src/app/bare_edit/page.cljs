@@ -7,6 +7,7 @@
             [bare-edit.keys :as keymap]
             [bare-edit.model :as model]
             [bare-edit.protocol :as p]
+            [bare-edit.search :as search]
             [bare-edit.steps :as steps]
             [clojure.string :as str]))
 
@@ -120,6 +121,167 @@
       :on-x-command-palette-close-request (fn [^js e]
                                             (.preventDefault e)
                                             (dispatch [:palette-close]))}]))
+
+(defn- icon-button
+  "A small ghost `x-button` showing `label`, named `title`, that calls `on-click`."
+  [label title on-click]
+  [:x-button {:variant "ghost" :size "sm" :title title :aria-label title :on-click on-click} label])
+
+(defn- command-click
+  "A click handler that runs the command named `command` through `dispatch`."
+  [command dispatch]
+  (fn [_] (dispatch [:command (steps/command-by-name command)])))
+
+(defn- option
+  "A checkbox labelled `label` for the option `k` of the find bar's query `q`.
+  A change, by a click on the box or its label or by a key, calls `dispatch` with
+  `[:find-set k checked]`. The box is a view of the state: its own change is refused, so it
+  shows what the state says. `title` is its tooltip, or `nil`."
+  [q k label title dispatch]
+  [:x-checkbox {:class "option" :title (or title "") :checked (boolean (get q k))
+                :on-x-checkbox-change-request (fn [^js e]
+                                                (.preventDefault e)
+                                                (dispatch [:find-set k (.. e -detail -nextChecked)]))}
+   label])
+
+(defn- count-text
+  "The words for `n` of `noun`, such as \"14 matches\", `more?` saying there were more than shown."
+  [n noun more?]
+  (let [nouns (if (= "match" noun) "matches" (str noun "s"))]
+    (cond (zero? n) (str "No " nouns)
+          (= 1 n)   (str "1 " noun)
+          :else     (str (when more? "First ") n " " nouns))))
+
+(defn- position-text
+  "The position `at` among `n` of `noun`, from 0, as \"3 of 14\", or [[count-text]] with no `at`.
+  When `more?`, there were more than `n`, and the count says so."
+  [at n noun more?]
+  (if at (str (inc at) " of " n (when more? "+")) (count-text n noun more?)))
+
+(defn find-status
+  "What the find bar says beside its query in the state `s`.
+  It is the problem with the query when there is one. In the file it says where the
+  selection is among the matches in the active buffer, or how many there are. In the
+  project it says the search is running, or where the selected line is among the lines
+  found. A line counts once, however many matches it holds."
+  [{:keys [find buffers active pending]}]
+  (let [{:keys [scope query results]} find
+        found                         (:found results)
+        problem                       (:problem (search/pattern query))]
+    (cond
+      (empty? (:text query)) ""
+      problem                problem
+      (= :file scope)        (if-let [st (get-in buffers [active :state])]
+                               (let [{n :count i :at} (editor/match-position st query)]
+                                 (position-text i n "match" false))
+                               "")
+      (:problem found)       (:problem found)
+      found                  (position-text (steps/selected-index results) (count (:matches found)) "line" (:more found))
+      (contains? pending (:searching results)) "Searching…"
+      :else                  "")))
+
+(defn hit-groups
+  "The matches of a project search grouped by file, in order, as `[path hits]` pairs.
+  Each hit is `[i match]`, with the match's index among all the `matches`."
+  [matches]
+  (->> (map-indexed vector matches)
+       (partition-by (comp :path second))
+       (map (fn [hits] [(:path (second (first hits))) hits]))))
+
+(defn summary
+  "The line over the matches of a project search that found `found`, `{:matches :more}`."
+  [{:keys [matches more]}]
+  (let [files (count (hit-groups matches))]
+    (str "In project: " (count-text (count matches) "line" more)
+         (when (pos? files) (str " in " files (if (= 1 files) " file" " files"))))))
+
+(defn- marked
+  "The line `text` with the matches of `re` in `mark` elements, or as it is for no `re`.
+  `re` is a pattern of [[bare-edit.search/pattern]]."
+  [re text]
+  (if re
+    (let [ranges (search/line-ranges re text)
+          ends   (concat [0] (mapcat identity ranges) [(count text)])]
+      (for [[i [from to]] (map-indexed vector (partition 2 1 ends))
+            :when (< from to)]
+        (if (odd? i) [:mark (subs text from to)] (subs text from to))))
+    [text]))
+
+(defn- hits-view
+  "The matches in `results`, a search of the project for the query `q`, grouped by file.
+  A file's header shows its name, its folder and its number of matches, and a click on it
+  folds its matches or shows them again. A click on a match opens it. The clicks call
+  `dispatch`."
+  [q {:keys [found folded] :as results} dispatch]
+  (let [at (steps/selected-index results)
+        re (:pattern (search/pattern q))]
+    [:div {:class "find-hits"}
+     (for [[path hits] (hit-groups (:matches found))
+           :let [folded? (contains? folded path)]]
+       [:div {:class "hit-file"}
+        [:div {:class "hit-head" :on-click (fn [_] (dispatch [:find-fold path]))}
+         [:span {:class "fold"} (if folded? "▸" "▾")]
+         [:span {:class "hit-name"} (model/file-name path)]
+         [:span {:class "hit-folder"} (model/folder-of path)]
+         [:span {:class "fill"}]
+         [:span {:class "hit-count"} (str (count hits))]]
+        (when-not folded?
+          (for [[i {:keys [line text]}] hits]
+            [:div {:class (if (= i at) "hit at" "hit") :on-click (fn [_] (dispatch [:find-open i]))}
+             [:span {:class "hit-line"} (str line)]
+             [:span {:class "hit-text"} (marked re text)]]))])]))
+
+(defn- query-keys
+  "The handler of keys in the find bar's query field, which calls `dispatch`.
+  A key of [[bare-edit.steps/find-keys]] goes to the find bar as `[:find-key key shift?]`,
+  and the field does not act on it."
+  [dispatch]
+  (fn [^js e]
+    (when (steps/find-keys (.-key e))
+      (.preventDefault e)
+      (dispatch [:find-key (.-key e) (.-shiftKey e)]))))
+
+(defn find-bar
+  "The find bar for the state `s`, whose controls call `dispatch`, or `nil` when it is closed.
+  The first row holds the query, where the selection is among the matches, the previous
+  and next buttons and the close button. The second holds the query's options. In the file
+  a third row replaces matches. In the project a summary and the matches follow, grouped by
+  file, see [[hits-view]]. Where to search is chosen by the command that opens the bar, so
+  the bar only names it. The query field waits for a pause in typing before it searches
+  the project. See [[bare-edit.steps/find-defaults]]."
+  [{:keys [find] :as s} dispatch]
+  (when find
+    (let [{:keys [scope query replacement results]} find
+          found    (:found results)
+          project? (= :project scope)]
+      [:div {:class "find-bar"}
+       [:div {:class "find-row"}
+        [:x-search-field {:id "find-query" :value (:text query) :autocomplete "off"
+                          :placeholder (if project? "Find in project" "Find in file")
+                          :debounce (if project? "250" "0")
+                          :on-x-search-field-input (fn [^js e] (dispatch [:find-set :text (.. e -detail -value)]))
+                          :on-keydown (query-keys dispatch)}]
+        [:span {:class "find-status"} (find-status s)]
+        (icon-button "↑" "Previous match (Shift-F3)" (command-click "find-previous" dispatch))
+        (icon-button "↓" "Next match (F3)" (command-click "find-next" dispatch))
+        (icon-button "✕" "Close (Escape)" (command-click "close" dispatch))]
+       [:div {:class "find-options"}
+        (option query :case "Match case" nil dispatch)
+        (option query :word "Whole word" nil dispatch)
+        (option query :regexp "Regular expression"
+                "JavaScript's rules in the file, Java's in the project" dispatch)
+        [:span {:class "fill"}]
+        (when (and project? found (not (:problem found)))
+          [:span {:class "find-summary"} (summary found)])]
+       (if project?
+         (when (seq (:matches found)) (hits-view query results dispatch))
+         [:div {:class "find-row"}
+          [:x-form-field {:id "find-replacement" :value replacement :placeholder "Replace with"
+                          :on-x-form-field-input (fn [^js e] (dispatch [:find-replacement (.. e -detail -value)]))}]
+          [:x-button {:variant "secondary" :size "sm" :on-click (fn [_] (dispatch [:find-edit :replace-match]))}
+           "Replace"]
+          [:x-button {:variant "secondary" :size "sm" :on-click (fn [_] (dispatch [:find-edit :replace-all]))}
+           "Replace all"]])])))
 
 (def fold-lines
   "How many lines of a value or of output a folded results entry shows."
@@ -342,7 +504,7 @@
   "The page, as hiccup, for the state `s`, whose controls call `dispatch` with events.
   It reads the `:paths`, `:expanded`, `:tabs`, `:buffers`, `:active`, `:conn`,
   `:questions`, `:palette`, `:results`, `:results-open?` and `:config` of `s`, and what
-  [[status-bar]] reads. Until the
+  [[status-bar]] and [[find-bar]] read. Until the
   look and feel arrives, the `x-theme` uses its own preset. The results column is always
   on the page, so the editor never moves; when closed, its pane takes no room."
   [{:keys [tabs buffers active paths expanded conn results-open? config] :as s} dispatch]
@@ -374,10 +536,13 @@
        ;; hidden while the active file loads, so nothing typed lands in the previous file's text
        [:div {:id "editor" :data-keep true
               :style (str fonts (ruler-style config) (when-not (:state active-b) "display:none"))}]
-       ;; render matches children by position, so the message comes after the editor: one
-       ;; that came before would move the editor's place, and the editor would be rebuilt
-       (when (empty? tabs)
-         [:div {:class "empty"} (if (= conn :closed) "Disconnected. Restart bareedit." "Open a file from the tree.")])]
+       ;; render matches children by position, so the message and the find bar come after
+       ;; the editor, each in a fixed slot: one that came before would move the editor's
+       ;; place, and the editor would be rebuilt
+       [:div {:class "slot"}
+        (when (empty? tabs)
+          [:div {:class "empty"} (if (= conn :closed) "Disconnected. Restart bareedit." "Open a file from the tree.")])]
+       [:div {:class "slot"} (find-bar s dispatch)]]
       [:div {:slot "end" :class "results-pane" :style fonts} (when results-open? (results-view s dispatch))]]]
      (status-bar s dispatch)
      ;; render matches children by position, so each overlay has a fixed slot and one

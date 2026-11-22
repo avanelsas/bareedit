@@ -12,7 +12,7 @@
   "The result of running `events` in order, starting from the state `s`.
   The returned effects are those of the last event."
   [s & events]
-  (reduce (fn [r e] (steps/step (assoc r :fx []) e)) (steps/result s) events))
+  (reduce (fn [r e] (steps/advance (assoc r :fx []) e)) (steps/result s) events))
 
 (defn- reply-to
   "The `:message` event that answers, with `status` and `extra`, the last request `r` sent."
@@ -210,8 +210,8 @@
         (is (= [[:focus-editor]] (:fx r)))
         (is (= [{:kind :new-file :path "src/"}] (get-in r [:state :questions])))))
     (testing "Escape closes the palette, and does nothing when none is open"
-      (is (nil? (:palette (:state (run s [:command (command :close-palette)])))))
-      (is (= {:state connected :fx []} (run connected [:command (command :close-palette)]))))
+      (is (nil? (:palette (:state (run s [:command (command :close)])))))
+      (is (= {:state connected :fx []} (run connected [:command (command :close)]))))
     (testing "the palette closing itself closes it in the state"
       (is (nil? (:palette (:state (run s [:palette-close]))))))
     (testing "a command picked in the command palette can open the file palette, which keeps the keys"
@@ -578,3 +578,89 @@
     (is (= "Program" (top (:state (run created [:command (steps/command-by-name "rename-file")]
                                     [:question-path "notes.clj"] [:answer :rename]))))
         "renamed to .clj, it is Clojure")))
+
+(deftest finding-in-the-file
+  (let [s (opened "(ns a)")
+        r (run s [:command (command :find)])]
+    (is (= :file (get-in r [:state :find :scope])))
+    (is (= [[:focus-find]] (:fx r)))
+    (testing "next and previous run on the editor"
+      (let [q (steps/find-query (:state r))]
+        (is (= [[:find-in-editor :next-match q ""]] (:fx (run (:state r) [:command (command :find-next)]))))
+        (is (= [[:find-in-editor :previous-match q ""]] (:fx (run (:state r) [:command (command :find-previous)]))))))
+    (testing "only the query's keys can be set"
+      (is (= (:state r) (:state (run (:state r) [:find-set :results {:found {:matches []}}])))))
+    (testing "the editor marks the query, and a replacement leaves the marks alone"
+      (let [s2 (:state (run (:state r) [:find-set :text "ns"]))
+            q  {:text "ns" :case false :regexp false :word false}]
+        (is (= q (steps/find-query s2)))
+        (is (= q (steps/find-query (:state (run s2 [:find-replacement "x"])))))
+        (is (= [[:find-in-editor :replace-all q "x"]]
+               (:fx (run s2 [:find-replacement "x"] [:find-edit :replace-all]))))))
+    (testing "Enter and the down arrow go to the next match, Shift-Enter and the up arrow to the previous"
+      (let [q (steps/find-query (:state r))]
+        (is (= [[:find-in-editor :next-match q ""]] (:fx (run (:state r) [:find-key "Enter" false]))))
+        (is (= [[:find-in-editor :previous-match q ""]] (:fx (run (:state r) [:find-key "Enter" true]))))
+        (is (= [[:find-in-editor :next-match q ""]] (:fx (run (:state r) [:find-key "ArrowDown" false]))))
+        (is (= [[:find-in-editor :previous-match q ""]] (:fx (run (:state r) [:find-key "ArrowUp" false]))))))
+    (testing "Escape closes the bar and gives the editor the focus"
+      (let [r2 (run (:state r) [:command (command :close)])]
+        (is (nil? (get-in r2 [:state :find])))
+        (is (= [[:focus-editor]] (:fx r2)))))))
+
+(deftest finding-in-the-project
+  (let [r  (run (opened "(ns a)") [:command (command :find-in-project)] [:find-set :text "defn"])
+        [_ req] (first (filter #(= :send (first %)) (:fx r)))]
+    (is (= {:op :search :query {:text "defn" :case false :regexp false :word false}} (dissoc req :id)))
+    (let [matches [{:path "src/a.clj" :line 3 :text "(defn f [])"} {:path "src/b.clj" :line 7 :text "(defn g [])"}]
+          s       (:state (run (:state r) (reply-to r :ok {:matches matches :more false})))]
+      (is (= matches (get-in s [:find :results :found :matches])))
+      (testing "an open file goes to the line"
+        (let [r2 (run s [:command (command :find-next)])]
+          (is (= {:path "src/a.clj" :line 3} (get-in r2 [:state :find :results :selected])))
+          (is (= [[:reveal-hit] [:goto 3]] (:fx r2)))))
+      (testing "a file that is not open goes to the line once it has loaded"
+        (let [r2 (run s [:find-open 1])
+              r3 (run (:state r2) (reply-to r2 :ok {:files {"src/b.clj" {:text "(ns b)" :version "v1"}}}))]
+          (is (= [[:goto 7]] (:fx r3)))
+          (is (nil? (get-in r3 [:state :buffers 2 :goto])))))
+      (testing "previous wraps around to the last match"
+        (is (= {:path "src/b.clj" :line 7} (get-in (run s [:command (command :find-previous)]) [:state :find :results :selected]))))
+      (testing "the arrow keys select a match without opening it, and unfold its file"
+        (let [r2 (run (assoc-in s [:find :results :folded] #{"src/b.clj"}) [:find-select 1] [:find-select 1])]
+          (is (= 1 (steps/selected-index (get-in r2 [:state :find :results]))))
+          (is (= #{} (get-in r2 [:state :find :results :folded])))
+          (is (= [[:reveal-hit]] (:fx r2)))))
+      (testing "Enter opens the selected match, and the arrow keys select"
+        (is (= 1 (steps/selected-index (get-in (run s [:find-key "ArrowDown" false] [:find-key "ArrowDown" false]) [:state :find :results]))))
+        (is (= [[:reveal-hit] [:goto 3]] (:fx (run s [:find-key "Enter" false])))))
+      (testing "opening the bar again searches again and keeps the matches until the reply"
+        (let [s2 (assoc-in s [:find :results :selected] {:path "src/b.clj" :line 7})
+              r2 (run s2 [:command (command :find-in-project)])]
+          (is (= :search (:op (second (first (filter #(= :send (first %)) (:fx r2)))))))
+          (is (= matches (get-in r2 [:state :find :results :found :matches])))
+          (testing "and the selection follows its match, not its place"
+            (let [moved [(second matches) {:path "src/c.clj" :line 1 :text "(defn h [])"}]]
+              (is (= 0 (steps/selected-index (get-in (run (:state r2) (reply-to r2 :ok {:matches moved :more false}))
+                                                     [:state :find :results])))))
+            (is (nil? (steps/selected-index (get-in (run (:state r2) (reply-to r2 :ok {:matches (take 1 matches) :more false}))
+                                                    [:state :find :results])))))
+          (testing "a reply to an older search of the same query is dropped"
+            (let [r3 (run (:state r2) [:command (command :find-in-project)])]
+              (is (= matches (get-in (run (:state r3) (reply-to r2 :ok {:matches [] :more false}))
+                                     [:state :find :results :found :matches])))))))
+      (testing "a save searches the project again"
+        (let [r2 (run (typed s "(ns a) 1") [:command {:id :save}])
+              r3 (run (:state r2) (reply-to r2 :ok {:version "v2"}))]
+          (is (some #(= :search (:op (second %))) (filter #(= :send (first %)) (:fx r3))))))
+      (testing "a file's matches fold and unfold"
+        (is (= #{"src/a.clj"} (get-in (run s [:find-fold "src/a.clj"]) [:state :find :results :folded])))
+        (is (= #{} (get-in (run s [:find-fold "src/a.clj"] [:find-fold "src/a.clj"]) [:state :find :results :folded])))))
+    (testing "the scope is the commands' to set"
+      (is (= :project (get-in (run (:state r) [:find-set :scope :file]) [:state :find :scope]))))
+    (testing "a reply to a query that changed since is dropped"
+      (let [s (:state (run (:state r) [:find-set :text "def"] (reply-to r :ok {:matches [] :more false})))]
+        (is (nil? (get-in s [:find :results :found])))))
+    (testing "a new query drops the old results at once"
+      (is (= {:searching (get-in r [:state :next-id])}
+             (get-in (run (:state r) [:find-set :case true]) [:state :find :results]))))))

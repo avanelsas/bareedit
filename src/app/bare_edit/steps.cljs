@@ -8,6 +8,9 @@
   - `[:send request]` sends the request on the WebSocket.
   - `[:toast type message]` shows a toast.
   - `[:goto line]` moves the cursor to the start of `line` in the editor.
+  - `[:focus-find]` gives the find bar's query field the focus.
+  - `[:find-in-editor id query]` runs the find command `id` with `query` on the editor.
+  - `[:reveal-hit]` scrolls the selected match of the project search into view.
   - `[:completed token candidates]` answers the editor's completion request `token`.
 
   [[bare-edit.app/dispatch!]] stores the state once and then runs the effects, so a step
@@ -15,6 +18,7 @@
   (:require [bare-edit.editor :as editor]
             [bare-edit.model :as model]
             [bare-edit.protocol :as p]
+            [bare-edit.search :as search]
             [bare-edit.settings :as settings]
             [clojure.string :as str]))
 
@@ -33,7 +37,8 @@
   it arrives, and `:project` the project folder's name, the same way. `:read-only?` says
   whether the server refuses every change to the project's files. `:repl` holds the
   last thing heard from the REPL of each session kind, see [[record-repl]]. `:unreadable`
-  holds the folders the last path list could not read."
+  holds the folders the last path list could not read. `:find` is the open find bar, see
+  [[find-defaults]], or `nil`."
   {:conn :connecting
    :config nil
    :project nil
@@ -50,6 +55,7 @@
    :active nil
    :questions []
    :palette nil
+   :find nil
    :results []
    :results-open? true
    :unfolded #{}})
@@ -61,8 +67,11 @@
   command `id` on the editor, see [[bare-edit.editor/run-command!]]. `[:goto line]` moves
   the cursor to `line` in the active buffer and gives the editor the focus.
   `[:completed token candidates]` answers the completion request `token` of the editor
-  with nREPL's candidates, or with `nil` for the words of the open file."
-  #{:send :toast :focus-editor :edit :goto :completed})
+  with nREPL's candidates, or with `nil` for the words of the open file. `[:focus-find]`
+  gives the find bar's query field the focus. `[:find-in-editor id query]` runs the find
+  command `id` with `query` on the editor, see [[bare-edit.editor/find-commands]].
+  `[:reveal-hit]` scrolls the selected match of the project search into view."
+  #{:send :toast :focus-editor :edit :goto :completed :focus-find :find-in-editor :reveal-hit})
 
 ;; ── Results ─────────────────────────────────────────────────────────────────
 
@@ -449,7 +458,10 @@
    {:id :show-docs         :group :repl      :label "Show docs"}
    {:id :clear-results     :group :results   :label "Clear results"}
    {:id :toggle-results    :group :results   :label "Toggle results column"}
-   {:id :find              :group :edit      :label "Find and replace"        :keys "Mod-f"           :scope :editor}
+   {:id :find              :group :edit      :label "Find and replace"        :keys "Mod-f"}
+   {:id :find-in-project   :group :edit      :label "Find in project"         :keys "Mod-Shift-f"}
+   {:id :find-next         :group :edit      :label "Find next"               :keys ["F3" "Mod-g"]}
+   {:id :find-previous     :group :edit      :label "Find previous"           :keys ["Shift-F3" "Mod-Shift-g"]}
    {:id :toggle-comment    :group :edit      :label "Toggle comment"          :keys "Mod-/"           :scope :editor}
    {:id :show-completions  :group :edit      :label "Show completions"        :keys "Ctrl-Space"      :scope :editor}
    {:id :reindent          :group :edit      :label "Reindent the current form"                       :scope :editor :clojure true}
@@ -463,7 +475,7 @@
    {:id :shrink-selection  :group :structure :label "Shrink selection"        :keys "Alt-ArrowDown"   :scope :editor :clojure true}
    {:id :open-settings     :group :settings  :label "Open settings"}
    {:id :command-palette   :label "Show all commands" :keys ["Mod-Shift-p" "F1"]}
-   {:id :close-palette     :label "Close the palette" :keys "Escape"}])
+   {:id :close             :label "Close the palette or the find bar" :keys "Escape"}])
 
 (defn command-dispatch
   "The value [[run-command]] dispatches `command` on.
@@ -519,8 +531,10 @@
 (defmethod run-command :file-palette    [r _] (open-palette r :files))
 (defmethod run-command :command-palette [r _] (open-palette r :commands))
 
-(defmethod run-command :close-palette [{s :state :as r} _]
-  (if (:palette s) (close-palette r) r))
+(defmethod run-command :close [{s :state :as r} _]
+  (cond (:palette s) (close-palette r)
+        (:find s)    (-> r (change assoc :find nil) (update :fx conj [:focus-editor]))
+        :else        r))
 
 (defmethod run-command :new-file [{s :state :as r} _]
   (change r ask {:kind :new-file
@@ -604,6 +618,17 @@
       (toast :warning (unreadable-text unreadable)))
     (toast r :error message)))
 
+(defn- loaded-gotos
+  "Returns the result `r` with the cursor moved for each buffer that loaded with a `:goto` line.
+  The line is dropped from the buffer, and the cursor moves only in the active buffer,
+  since the editor shows that one."
+  [{s :state :as r}]
+  (reduce (fn [r [id {:keys [goto]}]]
+            (cond-> (change r update-in [:buffers id] dissoc :goto)
+              (= id (:active s)) (update :fx conj [:goto goto])))
+          r
+          (for [[id b] (:buffers s) :when (and (:goto b) (not (:loading? b)))] [id b])))
+
 (defn- disk-read
   "Returns the result `r` after a read of `paths` from disk, with `status` and `message`.
   When it is `:ok`, `files` maps each path to `{:text :version}`, and each open buffer of a
@@ -611,9 +636,11 @@
   they would wait forever, and a toast shows `message`."
   [r paths status files message]
   (if (= :ok status)
-    (change r (fn [s] (reduce (fn [s [path disk]]
-                                (reduce #(apply-disk %1 %2 disk) s (buffer-ids-for s path)))
-                              s files)))
+    (-> r
+        (change (fn [s] (reduce (fn [s [path disk]]
+                                  (reduce #(apply-disk %1 %2 disk) s (buffer-ids-for s path)))
+                                s files)))
+        loaded-gotos)
     (-> r
         (change (fn [s] (reduce close-buffer s (for [path paths
                                                      id   (buffer-ids-for s path)
@@ -661,6 +688,19 @@
     :conflict (-> r (toast :error message) (read-paths [from]))
     (toast r :error message)))
 
+(defn- refresh-project
+  "Returns the result `r` with the project searched again for the find bar's query.
+  The matches found stay until the reply replaces them. The results' `:searching`
+  becomes the request's id, so only the reply to the newest search counts. A search is
+  sent only when the find bar searches the project and its query has text."
+  [{s :state :as r}]
+  (let [{:keys [scope query]} (:find s)]
+    (if (and (= :project scope) (seq (:text query)))
+      (-> r
+          (change assoc-in [:find :results :searching] (:next-id s))
+          (send :search {:query query}))
+      r)))
+
 (defn- saved
   "Returns the result `r` after a save of `text` to `path`, sent with the version `sent-version`.
   `then` is the save's follow-up, and `status`, `version` and `message` come from the reply.
@@ -688,6 +728,12 @@
   ;; a saved settings file changes the look at once
   (cond-> (saved r req reply)
     (= :ok status) (send :config {})))
+
+(defmethod on-reply :search [{s :state :as r} _req {:keys [id status matches more message]}]
+  ;; only the reply to the newest search counts, see refresh-project
+  (if (= id (get-in s [:find :results :searching]))
+    (change r assoc-in [:find :results :found] (if (= :ok status) {:matches matches :more more} {:problem message}))
+    r))
 
 ;; ── Events ──────────────────────────────────────────────────────────────────
 
@@ -721,7 +767,20 @@
     waits for as `token`. A Clojure file in the active tab asks the REPL, in the file's
     namespace; any other file, or no connection, answers `nil` at once.
   - `[:jump-to id]` goes to the code of the results entry `id`: to its line, if it has one,
-    when its file is open, or else it opens the file."
+    when its file is open, or else it opens the file.
+  - `[:find-set k v]` sets the option or text `k` of the open find bar's query to `v`,
+    one of the keys of [[bare-edit.search/blank-query]], and searches the project again
+    in the project scope.
+  - `[:find-replacement text]` sets the text that replaces a match in the file.
+  - `[:find-open i]` opens the match `i` of the project search at its line.
+  - `[:find-select delta]` selects the match `delta` places from the selected one in the
+    project search, without opening it.
+  - `[:find-key key shift?]` is a key of [[find-keys]] pressed in the query field, with
+    or without Shift, see [[find-key]].
+  - `[:find-fold path]` folds the matches of the file `path` in the project search, or
+    shows them again.
+  - `[:find-edit id]` runs the find command `id`, `:replace-match` or `:replace-all`, with
+    the find bar's query on the active buffer, when the bar searches the file."
   (fn [_r event] (first event)))
 
 (defmethod step :connected [{s :state :as r} _]
@@ -904,3 +963,202 @@
     (if (and state (= :clj (p/kind-for path)) (connected? s))
       (send r :completions {:prefix prefix :ns (model/ns-of (editor/text state))} {:token token})
       (update r :fx conj [:completed token nil]))))
+
+;; ── Find ────────────────────────────────────────────────────────────────────
+
+(def find-defaults
+  "The find bar when it first opens.
+  `:scope` is `:file` to search the active buffer or `:project` to search every file.
+  `:query` is the query, see [[bare-edit.search/query?]], and `:replacement` the text
+  that replaces a match in the file. `:results` is the search of the project, or `nil`
+  before there is one. It holds `:searching`, the id of the newest search, whose reply
+  alone counts, and `:found`, the reply to it, `{:matches :more}` or `{:problem message}`.
+  It also holds `:selected`, the selected match as `{:path :line}`, which names it in any
+  search, and `:folded`, the paths whose matches are hidden. Only the commands set
+  `:scope`: `Mod-f` and `Mod-Shift-f` say where to search."
+  {:scope :file :query search/blank-query :replacement "" :results nil})
+
+(defn find-query
+  "The query of the find bar in the state `s`, whose matches the editor marks, or `nil`.
+  It is `nil` when the bar is closed."
+  [s]
+  (get-in s [:find :query]))
+
+(defn- search-project
+  "Returns the result `r` with the project's results dropped and searched for again.
+  It is for a new query, whose old results no longer apply, see [[refresh-project]]."
+  [r]
+  (refresh-project (change r update :find dissoc :results)))
+
+(defn- open-find
+  "Returns the result `r` with the find bar open on `scope`, and its query field focused.
+  Text selected on one line in the active buffer becomes the query. The project is
+  searched again each time, since its files may have changed. A new query or scope
+  clears the old matches first."
+  [{s :state :as r} scope]
+  (let [old      (:find s)
+        selected (some-> (active-buffer s) :state editor/selected-text)
+        f        (cond-> (assoc (or old find-defaults) :scope scope)
+                   selected (assoc-in [:query :text] selected))
+        r        (-> r (change assoc :find f) (update :fx conj [:focus-find]))]
+    (if (or (not= (:query f) (:query old))
+            (not= scope (:scope old))
+            (nil? (:results f)))
+      (search-project r)
+      (refresh-project r))))
+
+(defn- open-at
+  "Returns the result `r` with `path` in the active tab and the cursor at `line`.
+  A file that still loads keeps the line as its buffer's `:goto`, and the cursor moves
+  there once it has loaded, see [[loaded-gotos]]."
+  [{s :state :as r} path line]
+  (if-let [id (first (buffer-ids-for s path))]
+    (if (get-in s [:buffers id :loading?])
+      (change r #(-> % (assoc :active id) (assoc-in [:buffers id :goto] line)))
+      (-> r (change assoc :active id) (update :fx conj [:goto line])))
+    (-> r
+        (change add-buffer {:path path :loading? true :goto line})
+        (read-paths [path]))))
+
+(defn- match-id
+  "The name of `match`, a match of a project search, as `{:path :line}`.
+  A search finds a line once, so the name stays the same in a search again."
+  [match]
+  (select-keys match [:path :line]))
+
+(defn selected-index
+  "The index of the selected match among the matches found in `results`, or `nil`.
+  `results` is a search of the project, see [[find-defaults]]. It is `nil` when no match
+  is selected, or when the last search no longer found it."
+  [{:keys [found selected]}]
+  (when selected
+    (first (keep-indexed (fn [i m] (when (= selected (match-id m)) i)) (:matches found)))))
+
+(defn- select-match
+  "Returns the result `r` with the match `i` of the project search selected and shown.
+  Its file's matches unfold, and the list scrolls to it."
+  [{s :state :as r} i]
+  (if-let [{:keys [path] :as m} (get-in s [:find :results :found :matches i])]
+    (-> r
+        (change update-in [:find :results] #(-> % (assoc :selected (match-id m)) (update :folded disj path)))
+        (update :fx conj [:reveal-hit]))
+    r))
+
+(defn- open-match
+  "Returns the result `r` with the match `i` of the project search selected and opened at its line."
+  [{s :state :as r} i]
+  (if-let [{:keys [path line]} (get-in s [:find :results :found :matches i])]
+    (-> r (select-match i) (open-at path line))
+    r))
+
+(defn- index-after
+  "The index of the match `delta` places from the selected one in `results`, or `nil`.
+  It wraps around at either end. With none selected, the next is the first and the
+  previous the last. It is `nil` when there are no matches."
+  [results delta]
+  (let [n (count (get-in results [:found :matches]))]
+    (when (pos? n)
+      (mod (+ (or (selected-index results) (if (pos? delta) -1 0)) delta) n))))
+
+(defn- select-step
+  "Returns the result `r` with the match `delta` places from the selected one selected."
+  [{s :state :as r} delta]
+  (if-let [i (index-after (get-in s [:find :results]) delta)] (select-match r i) r))
+
+(defn- find-in-editor
+  "Returns the result `r` with the find command `id` to run on the active buffer, if any.
+  The effect carries the find bar's query and replacement, so the command acts on those of
+  this state."
+  [{s :state :as r} id]
+  (let [{:keys [query replacement]} (:find s)]
+    (cond-> r
+      (active-buffer s) (update :fx conj [:find-in-editor id query replacement]))))
+
+(defn- find-step
+  "Returns the result `r` with the find bar moved `delta`, 1 or -1, matches on.
+  In the file it selects the next or the previous match. In the project it opens the
+  next or the previous match of the search, wrapping around at either end. A closed bar
+  opens on the file."
+  [{s :state :as r} delta]
+  (let [f (:find s)
+        i (index-after (:results f) delta)]
+    (cond
+      (nil? f)               (open-find r :file)
+      (= :file (:scope f))   (find-in-editor r (if (pos? delta) :next-match :previous-match))
+      i                      (open-match r i)
+      :else                  r)))
+
+(def find-keys
+  "The keys of the find bar's query field that the find bar acts on, not the field."
+  #{"Enter" "ArrowUp" "ArrowDown"})
+
+(defn- find-key
+  "Returns the result `r` after the key `k` of [[find-keys]] in the query field, `shift?` held.
+  Enter goes to the next match and Shift-Enter to the previous. In the project, Enter opens
+  the selected match, or the first, and the arrow keys select one without opening it. In
+  the file the arrow keys select the next or the previous match, as Enter does."
+  [{s :state :as r} k shift?]
+  (let [{:keys [scope results]} (:find s)
+        project?                (= :project scope)]
+    (case k
+      "Enter"     (cond shift?   (find-step r -1)
+                        project? (if (index-after results 1) (open-match r (or (selected-index results) 0)) r)
+                        :else    (find-step r 1))
+      "ArrowDown" (if project? (select-step r 1) (find-step r 1))
+      "ArrowUp"   (if project? (select-step r -1) (find-step r -1))
+      r)))
+
+(defmethod run-command :find            [r _] (open-find r :file))
+(defmethod run-command :find-in-project [r _] (open-find r :project))
+(defmethod run-command :find-next       [r _] (find-step r 1))
+(defmethod run-command :find-previous   [r _] (find-step r -1))
+
+(defmethod step :find-set [{s :state :as r} [_ k v]]
+  (cond-> r
+    (and (:find s) (contains? search/blank-query k)) (-> (change assoc-in [:find :query k] v)
+                                                        search-project)))
+
+(defmethod step :find-replacement [{s :state :as r} [_ text]]
+  (cond-> r
+    (:find s) (change assoc-in [:find :replacement] text)))
+
+(defmethod step :find-open [r [_ i]]
+  (open-match r i))
+
+(defmethod step :find-select [r [_ delta]]
+  (select-step r delta))
+
+(defmethod step :find-key [r [_ k shift?]]
+  (find-key r k shift?))
+
+(defmethod step :find-fold [{s :state :as r} [_ path]]
+  (cond-> r
+    (get-in s [:find :results]) (change update-in [:find :results :folded]
+                                        #(if (contains? % path) (disj % path) (conj (or % #{}) path)))))
+
+(defmethod step :find-edit [{s :state :as r} [_ id]]
+  (cond-> r
+    (= :file (get-in s [:find :scope])) (find-in-editor id)))
+
+;; ── After each event ────────────────────────────────────────────────────────
+
+(defn- disk-moved?
+  "Whether the project on disk changed between the states `old` and `new`, as far as known.
+  It changed when the path list changed, or when a file that was read before has another
+  version on disk. A file read for the first time is no change."
+  [old new]
+  (let [versions (fn [s] (into {} (for [b (vals (:buffers s)) :when (:disk-version b)]
+                                    [(:path b) (:disk-version b)])))
+        before   (versions old)]
+    (or (not= (:paths old) (:paths new))
+        (some (fn [[path v]] (and (contains? before path) (not= v (before path))))
+              (versions new)))))
+
+(defn advance
+  "Returns the result `r` after `event`: the [[step]], and what follows from the change.
+  When the project on disk changed and the find bar shows matches of the project, the
+  project is searched again, so the matches follow the disk, see [[disk-moved?]]."
+  [{old :state :as r} event]
+  (let [{s :state :as r} (step r event)]
+    (cond-> r
+      (and (get-in s [:find :results :found]) (disk-moved? old s)) refresh-project)))

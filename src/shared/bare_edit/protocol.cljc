@@ -2,7 +2,8 @@
   "The messages between the browser and the server, as data, used by both sides.
   A request is `{:op :id ...}`, its reply is `{:id :status ...}`, and an event the server
   sends unasked is `{:event ...}`. Messages travel as EDN text."
-  (:require #?(:clj [clojure.edn :as edn]
+  (:require [bare-edit.search :as search]
+            #?(:clj [clojure.edn :as edn]
                :cljs [cljs.reader :as edn])))
 
 (defn kind-for
@@ -48,7 +49,9 @@
    :versions [#(and (map? %) (every? string? (keys %)) (every? version? (vals %)))
               "a map of path to version"                 {"src/a.clj" :absent}]
    :ns       [#(or (nil? %) (string? %))                 "a namespace name or nil" nil]
-   :boolean  [boolean?                                   "true or false"         true]})
+   :boolean  [boolean?                                   "true or false"         true]
+   :query    [search/query?                              "a query (a map of :text, :case, :regexp and :word)"
+              search/blank-query]})
 
 (defn unless-known
   "The file `disk`, `{:text :version}`, without its `:text` when `known` is its version.
@@ -66,7 +69,8 @@
   "The operations, each with its request keys and their kinds, and its reply keys.
   The reply keys are those of a reply whose status is `:ok`. `:optional` names the keys an
   `:ok` reply may hold, each with its kind. A `:project` reply holds `:read-only` `true`
-  when the project's files cannot be changed."
+  when the project's files cannot be changed. A `:search` request holds a query,
+  see [[bare-edit.search/query?]], and its reply gives what [[bare-edit.search/found]] gives."
   {:paths       {:request {}                                             :reply #{:paths :unreadable}}
    :read        {:request {:paths :strings :known :versions}             :reply #{:files}}
    :save        {:request {:path :string :text :string :version :version} :reply #{:version}}
@@ -80,7 +84,9 @@
    :read-settings {:request {}                                           :reply #{:text :version}}
    :save-settings {:request {:text :string :version :version}            :reply #{:version}}
    :project     {:request {}                                             :reply #{:name}
-                 :optional {:read-only :boolean}}})
+                 :optional {:read-only :boolean}}
+   :search      {:request {:query :query}
+                 :reply #{:matches :more}}})
 
 (def events
   "The events the server sends unasked."

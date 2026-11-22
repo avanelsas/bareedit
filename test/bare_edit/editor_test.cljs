@@ -144,3 +144,37 @@
 (deftest every-language-has-its-extensions
   (doseq [language (conj (set (vals model/languages)) :text)]
     (is (some? (get editor/language-extensions language)) language)))
+
+(defn- selected
+  "The text and the selection of the state after the transaction `tr`, as `[text from to]`."
+  [^js tr]
+  (let [^js s (.-state tr)]
+    [(editor/text s) (.. s -selection -main -from) (.. s -selection -main -to)]))
+
+(deftest finding-in-the-file
+  (let [s (at "a |b a b")
+        q {:text "a"}]
+    (testing "next and previous wrap around"
+      (is (= ["a b a b" 4 5] (selected (editor/next-match s q))))
+      (is (= ["a b a b" 0 1] (selected (editor/previous-match s q))))
+      (is (= ["a b a b" 0 1] (selected (editor/next-match (.-state (editor/next-match s q)) q)))))
+    (is (= {:at nil :count 2} (editor/match-position s q)))
+    (is (= {:at 1 :count 2} (editor/match-position (.-state (editor/next-match s q)) q)))
+    (is (nil? (editor/next-match (at "|abc") {:text "x"})))
+    (is (nil? (editor/next-match (at "|abc") nil))))
+  (testing "the editor marks the query it was given, apart from the commands"
+    (let [^js s (.-state (.update (at "|a") #js {:effects (editor/find-effect {:text "a"})}))]
+      (is (= {:text "a"} (editor/find-of s))))))
+
+(deftest replacing-in-the-file
+  (let [s (at "|a b a")
+        q {:text "a"}]
+    (testing "replace selects the next match first, then replaces it and selects the next"
+      (let [s1 (.-state (editor/replace-match s q "xy"))]
+        (is (= ["a b a" 0 1] (selected (editor/replace-match s q "xy"))))
+        (is (= ["xy b a" 5 6] (selected (editor/replace-match s1 q "xy"))))))
+    (is (= "xy b xy" (editor/text (.-state (editor/replace-all s q "xy")))))
+    (testing "a regular expression replaces with its groups"
+      (is (= "[f] [g]" (editor/text (.-state (editor/replace-all (at "|(f) (g)")
+                                                                 {:text "\\((\\w)\\)" :regexp true}
+                                                                 "[$1]"))))))))
