@@ -116,3 +116,9 @@
     (testing "a name that differs only in case is renamed, also where case is ignored"
       (is (= {:version v} (files/rename! root "src/a.clj" "src/A.clj" v)))
       (is (= ["A.clj"] (map (comp str fs/file-name) (fs/list-dir (fs/path root "src"))))))))
+
+(deftest texts-to-search
+  (let [root (project {"a.clj" "(ns a)" "b.txt" "b"})]
+    (fs/write-bytes (fs/path root "logo.png") (byte-array [-119 80 0 1]))
+    (testing "binary files are left out"
+      (is (= [["a.clj" "(ns a)"] ["b.txt" "b"]] (vec (files/texts root)))))))

@@ -16,7 +16,9 @@ The details behind the [README](../README.md).
 | `Mod-.` | Interrupt the evaluation |
 | `F2` | Rename the file |
 | `Alt-w`, `Alt-[`, `Alt-]` | Close, previous and next tab |
-| `Mod-f` | Find and replace |
+| `Mod-f` | Find and replace in the file |
+| `Mod-Shift-f` | Find in the project |
+| `F3` or `Mod-g`, `Shift-F3` or `Mod-Shift-g` | Next and previous match |
 | `Ctrl-Space` | Show completions |
 
 The keys for structural editing are in [Structural editing](#structural-editing).
@@ -44,6 +46,15 @@ In `.clj` and `.cljc` files, completions come from the REPL, with the kind and n
 - When no watch runs, no runtime is connected, or the watch stops, the result says so. The next evaluation reconnects.
 - A ClojureScript evaluation cannot be interrupted, and docs are not available.
 - Without a `.nrepl-port`, Clojure evaluations use shadow-cljs's own JVM.
+
+## Find
+
+The find bar opens at the bottom of the editor, so it never covers the text. Selected text on one line becomes the query. `Mod-f` searches the open file and `Mod-Shift-f` the project. Pressing the other key switches, and keeps the query.
+
+- **In the file**, every match is marked. Enter, the down arrow or `F3` selects the next, and Shift-Enter, the up arrow or `Shift-F3` the previous. The bar shows where you are, such as "3 of 14". The row below replaces the selected match, or every match at once. A regular expression's replacement can use `$1` for its first group.
+- **In the project**, every file in the tree is searched as you type. The matches are grouped by file, with the query marked in each line. The arrow keys select a match and Enter opens it, or click one. `F3` and `Shift-F3` open the next and the previous. A click on a file's name folds its matches. The count is of lines, so a line with three matches counts once. The first 500 matching lines show. Opening the bar again searches again, and so does any change on disk that the editor sees, such as a save or a rename. Binary files, and files over 1 MB, are left out.
+- **Match case**, **Whole word** and **Regular expression** change the query. A match never runs across lines. Escape closes the bar.
+- The project search reads the files on disk, so unsaved changes are not searched.
 
 ## Files
 

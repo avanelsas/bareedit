@@ -11,6 +11,16 @@ the command's options and the keys may still change.
 
 - **A read-only demo on GitHub Pages.** It shows BareEdit with its own code. It cannot
   save or evaluate.
+- **Find in the project** (`Mod-Shift-f`). The matches show in the find bar, grouped by
+  file, and Enter or a click opens one. `F3` and `Shift-F3` go to the next and previous
+  match.
+
+### Changed
+
+- **The find bar** is BareEdit's own, at the bottom of the editor. It uses the interface's
+  font size, and it searches the file or the project.
+- **BareDOM 4.22.0.** A click on the words next to a find option toggles it, through
+  BareDOM's own checkbox label.
 
 ## [0.2.0] - 2026-11-20
 

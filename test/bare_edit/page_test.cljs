@@ -3,6 +3,7 @@
   Each control is checked by the event its handler dispatches."
   (:require [bare-edit.editor :as editor]
             [bare-edit.page :as page]
+            [bare-edit.search :as search]
             [bare-edit.steps :as steps]
             [clojure.test :refer [deftest is testing]]))
 
@@ -240,3 +241,42 @@
   (testing "the page carries the overrides"
     (is (= (page/syntax-style {:dark {:tag "teal"}})
            (text (elements (render (assoc state :config {:syntax {:dark {:tag "teal"}}}) (atom [])) :style))))))
+
+(deftest the-find-bar
+  (is (nil? (page/find-bar state identity)))
+  (let [events (atom [])
+        in-file (assoc state :find (assoc-in steps/find-defaults [:query :text] "a"))
+        h       (render in-file events)]
+    (testing "in the file it counts the matches and can replace"
+      (is (= "1 match" (page/find-status in-file)))
+      (is (seq (elements h :x-form-field))))
+    (testing "typing sets the query"
+      ((:on-x-search-field-input (second (first (elements h :x-search-field)))) #js {:detail #js {:value "ns"}})
+      (is (= [[:find-set :text "ns"]] @events))))
+  (let [events  (atom [])
+        found   {:matches [{:path "src/b.clj" :line 4 :text "(defn f [])"}] :more true}
+        project (assoc state :find (-> steps/find-defaults (assoc :scope :project :results {:found found})
+                                         (assoc-in [:query :text] "defn")))
+        h       (render project events)]
+    (is (= "1 line" (page/find-status project)) "the project counts lines")
+    (is (= "In project: 1 line in 1 file" (page/summary found)))
+    (is (empty? (elements h :x-form-field)))
+    (testing "the matches are grouped by file, with the query marked"
+      (is (= "▾b.cljsrc/1" (text (first (filter #(= "hit-head" (:class (second %))) (elements h :div))))))
+      (is (= [[:mark "defn"]] (elements h :mark))))
+    (testing "a click on a line opens it, and on a file's header folds it"
+      (let [hit  (first (filter #(= "hit" (:class (second %))) (elements h :div)))
+            head (first (filter #(= "hit-head" (:class (second %))) (elements h :div)))]
+        (is (= "4(defn f [])" (text hit)))
+        ((:on-click (second hit)) nil)
+        ((:on-click (second head)) nil)
+        (is (= [[:find-open 0] [:find-fold "src/b.clj"]] @events)))))
+  (testing "the position among the matches"
+    (let [found {:matches (mapv (fn [n] {:path "a" :line n :text "x"}) (range 1 15)) :more false}]
+      (is (= "3 of 14" (page/find-status (assoc state :find (assoc steps/find-defaults :scope :project
+                                                                    :query (assoc search/blank-query :text "x")
+                                                                    :results {:found found
+                                                                              :selected {:path "a" :line 3}})))))))
+  (testing "a broken regular expression says so"
+    (is (= "The regular expression is not valid."
+           (page/find-status (assoc state :find (assoc steps/find-defaults :query (assoc search/blank-query :text "(" :regexp true))))))))

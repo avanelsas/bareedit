@@ -85,6 +85,24 @@
 
 ;; ── Reading and saving ──────────────────────────────────────────────────────
 
+(def max-search-bytes
+  "The size above which a file is left out of a search, in bytes."
+  (* 1024 1024))
+
+(defn texts
+  "The text of each file of the project at `root` that a search reads, as `[path text]` pairs.
+  The files are those of [[listing]], in its order of paths. A file larger than
+  [[max-search-bytes]] is left out, and so is a binary file, one that holds a zero byte.
+  The pairs are read lazily, a chunk at a time, so a search that stops early reads few
+  files past the last it needs."
+  [root]
+  (for [rel (:paths (listing root))
+        :let [file (paths/resolve-in root rel)]
+        :when (and file (<= (fs/size file) max-search-bytes))
+        :let [^bytes bs (fs/read-all-bytes file)]
+        :when (not-any? zero? bs)]
+    [rel (String. bs "UTF-8")]))
+
 (defn read-file
   "The file at the project-relative path `rel` under `root`, as `{:text :version}`.
   A missing file is `{:text \"\" :version :absent}`."

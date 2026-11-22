@@ -1,7 +1,7 @@
 (ns bare-edit.app
   "The browser shell: the state atom, the effects, the editor view and the wiring.
   All state lives in one atom. Every event goes through [[dispatch!]], which asks
-  [[bare-edit.steps/step]] for the new state and the effects, stores the state once, so the
+  [[bare-edit.steps/advance]] for the new state and the effects, stores the state once, so the
   page renders once, and then runs the effects."
   (:require [bare-edit.editor :as editor]
             [bare-edit.keys :as keys]
@@ -10,9 +10,11 @@
             [bare-edit.render :as render]
             [bare-edit.steps :as steps]
             [baredom.exports.x-button :as x-button]
+            [baredom.exports.x-checkbox :as x-checkbox]
             [baredom.exports.x-command-palette :as x-command-palette]
             [baredom.exports.x-form-field :as x-form-field]
             [baredom.exports.x-modal :as x-modal]
+            [baredom.exports.x-search-field :as x-search-field]
             [baredom.exports.x-split-pane :as x-split-pane]
             [baredom.exports.x-tab :as x-tab]
             [baredom.exports.x-tabs :as x-tabs]
@@ -75,6 +77,18 @@
     (swap! completions update :waiting dissoc token)
     (resolve candidates)))
 
+(defmethod run-effect! :find-in-editor [[_ id q replacement]]
+  (some-> ^js (:view @editor-view) (editor/run-find! id q replacement)))
+
+(defmethod run-effect! :reveal-hit [_]
+  (some-> (js/document.querySelector ".hit.at") (.scrollIntoView #js {:block "nearest"})))
+
+(defmethod run-effect! :focus-find [_]
+  ;; the field's own input holds the focus, inside its shadow root
+  (when-let [^js input (some-> (js/document.getElementById "find-query") .-shadowRoot (.querySelector "input"))]
+    (.focus input)
+    (.select input)))
+
 (defmethod run-effect! :toast [[_ type message]]
   (when-let [^js t (js/document.getElementById "toaster")]
     (.toast t #js {:type (name type) :message message :timeoutMs 6000})))
@@ -93,7 +107,7 @@
        (js/queueMicrotask #(dispatch! [:complete {:prefix prefix :token token}]))))))
 
 (defn dispatch!
-  "Runs `event` through [[bare-edit.steps/step]].
+  "Runs `event` through [[bare-edit.steps/advance]].
   The new state is stored once, which renders the page, and the effects run in order.
   Last, the view is given the active buffer's editor state, even when the state did not
   change: an edit no buffer took leaves the view holding a state of its own, and this puts
@@ -102,7 +116,7 @@
   with the state as it is then, not as this event left it, because an effect such as
   `[:edit id]` runs an event of its own on the way."
   [event]
-  (let [{s :state fx :fx} (steps/step (steps/result @state) event)]
+  (let [{s :state fx :fx} (steps/advance (steps/result @state) event)]
     (when-not (identical? s @state) (reset! state s))
     (run! run-effect! fx)
     (sync-view! @state)))
@@ -156,7 +170,10 @@
   "Gives the view the `EditorState` of the active buffer in the state `s`, when it differs.
   Switching buffers focuses the editor. A new state for the buffer already shown, such as a
   reload from disk, keeps the scroll position. Restoring it is a CodeMirror transaction,
-  so it reaches [[dispatch!]] as an `:editor-state` event of its own."
+  so it reaches [[dispatch!]] as an `:editor-state` event of its own. So is giving the
+  view the find bar's query to mark, see [[bare-edit.steps/find-query]], when it differs
+  from the one the view marks. The marks are all the editor takes from that copy: each
+  find command gets its query in its effect."
   [s]
   (let [{^js v :view shown :shown} @editor-view
         id (:active s)
@@ -168,7 +185,11 @@
           (.setState v st)
           (.dispatch v #js {:effects snapshot}))
         (do (.setState v st)
-            (.focus v))))))
+            (.focus v))))
+    (when v
+      (let [q (steps/find-query s)]
+        (when (not= q (editor/find-of (.-state v)))
+          (.dispatch v #js {:effects (editor/find-effect q)}))))))
 
 ;; ── Start ───────────────────────────────────────────────────────────────────
 
@@ -177,7 +198,7 @@
   []
   (doseq [init [x-theme/init x-split-pane/init x-tree/init x-tabs/init x-tab/init
                 x-modal/init x-button/init x-toast/init x-toaster/init
-                x-command-palette/init x-form-field/init]]
+                x-command-palette/init x-form-field/init x-search-field/init x-checkbox/init]]
     (init)))
 
 (defn connect

@@ -1,6 +1,7 @@
 (ns bare-edit.server-test
   "Tests the real server over HTTP and a WebSocket, driven as the browser would."
   (:require [bare-edit.protocol :as p]
+            [bare-edit.search :as search]
             [bare-edit.server :as server]
             [babashka.fs :as fs]
             [babashka.http-client :as http]
@@ -103,6 +104,16 @@
 (deftest an-operation-without-a-method
   (is (= {:id 1 :status :unavailable :message "Operation :nothing is not available yet."}
          (server/handle {} {:op :nothing :id 1}))))
+
+(deftest searching-the-project
+  (let [root (fs/create-temp-dir)
+        ask  (fn [q] (server/handle {:root (str root)}
+                                       (p/request :search 1 {:query (merge search/blank-query q)})))]
+    (spit (str (fs/path root "a.clj")) "(ns a)\n(defn f [])")
+    (is (= {:id 1 :status :ok :matches [{:path "a.clj" :line 2 :text "(defn f [])"}] :more false}
+           (ask {:text "DEFN"})))
+    (is (= :error (:status (ask {:text "(" :regexp true}))))
+    (is (seq (p/request-problems (p/request :search 1 {:query "DEFN"}))) "a query is a map")))
 
 (deftest the-settings-file
   (let [file (str (fs/path (fs/create-temp-dir) "new" "folder" "config.edn"))

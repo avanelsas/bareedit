@@ -9,6 +9,7 @@
             [bare-edit.paths :as paths]
             [bare-edit.protocol :as p]
             [bare-edit.repl :as repl]
+            [bare-edit.search :as search]
             [babashka.fs :as fs]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -84,6 +85,12 @@
         (p/reply id :ok {:version new-version})
         (p/failure id :conflict (str path " changed on disk since it was loaded."
                                      (when (= :absent conflict) " It no longer exists.")))))))
+
+(defmethod handle :search [{:keys [root]} {:keys [id query]}]
+  (let [{:keys [problem] :as answer} (search/search query (files/texts root))]
+    (if problem
+      (p/failure id :error problem)
+      (p/reply id :ok answer))))
 
 ;; ── The REPL ───────────────────────────────────────────────────────────────
 ;; A REPL operation answers later, through the connection's `:reply!`, so its method

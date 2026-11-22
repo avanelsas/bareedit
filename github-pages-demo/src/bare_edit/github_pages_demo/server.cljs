@@ -2,10 +2,11 @@
   "A stand-in for the BareEdit server that shows a snapshot of a project and changes nothing.
   It answers the same messages as the server, from a snapshot, `{:version :files}`, where
   `:files` maps each project-relative path to its text. A snapshot that could not be loaded
-  is `{:problem message}` instead. The stand-in names the project as read-only, lists and
-  reads the files, and refuses every other operation, such as a save or an evaluation, as
+  is `{:problem message}` instead. The stand-in names the project as read-only, lists,
+  reads and searches the files, and refuses every other operation, such as a save or an evaluation, as
   `:unavailable`, so the editor shows why."
   (:require [bare-edit.protocol :as p]
+            [bare-edit.search :as search]
             [clojure.string :as str]))
 
 (def project-name
@@ -19,9 +20,10 @@
 (defmulti reply
   "The reply to the well-formed request `req`, from `snapshot`, dispatched on the request's `:op`.
   `:project` names the project as read-only, and `:config` gives the default look. `:paths`
-  lists the files, and `:read` gives each file, see [[bare-edit.protocol/unless-known]]. A
-  path that is not in the snapshot is `:absent`. Both answer `:error` with the snapshot's
-  `:problem` when it has one. Any other operation is refused."
+  lists the files, `:read` gives each file, see [[bare-edit.protocol/unless-known]], and
+  `:search` searches them, see [[bare-edit.search/search]]. A path that is not in the
+  snapshot is `:absent`. All three answer `:error` with the snapshot's `:problem` when it
+  has one. Any other operation is refused."
   (fn [_snapshot req] (:op req)))
 
 (defmethod reply :default [_snapshot {:keys [id]}]
@@ -46,6 +48,12 @@
                                                              (if (contains? files path)
                                                                {:text (get files path) :version version}
                                                                {:text "" :version :absent}))]))})))
+
+(defmethod reply :search [{:keys [files problem]} {:keys [id query]}]
+  (let [answer (when-not problem (search/search query (sort files)))]
+    (cond problem           (p/failure id :error problem)
+          (:problem answer) (p/failure id :error (:problem answer))
+          :else             (p/reply id :ok answer))))
 
 (defn answer
   "The reply to `text`, one message from the editor, as EDN text, or `nil` when there is none.
