@@ -456,6 +456,7 @@
    {:id :eval-file         :group :repl      :label "Evaluate file"}
    {:id :interrupt         :group :repl      :label "Interrupt evaluation"    :keys "Mod-."}
    {:id :show-docs         :group :repl      :label "Show docs"}
+   {:id :go-to-definition  :group :repl      :label "Go to definition"        :keys "F12"             :scope :editor}
    {:id :clear-results     :group :results   :label "Clear results"}
    {:id :toggle-results    :group :results   :label "Toggle results column"}
    {:id :find              :group :edit      :label "Find and replace"        :keys "Mod-f"}
@@ -562,13 +563,29 @@
                                         :form (str "(load-file \"" path "\")")})
                       r))))
 
+(defn- lookup-args
+  "The arguments of a `:lookup` of the symbol at the cursor in `buffer`, or `nil`.
+  It is `nil` when the cursor is on no symbol. The symbol is looked up in the namespace of
+  the buffer's file."
+  [{:keys [path state]}]
+  (when-let [sym (some-> state editor/symbol-at)]
+    {:path path :sym sym :ns (model/ns-of (editor/text state))}))
+
+(def definition-refusal
+  "The toast for go to definition in a file that is not Clojure."
+  [:toast :info "Go to definition works in .clj and .cljc files."])
+
+(defmethod run-command :go-to-definition [{s :state :as r} _]
+  (let [{:keys [path] :as args} (lookup-args (active-buffer s))]
+    (cond (nil? args)                   r
+          (not= :clj (p/kind-for path)) (update r :fx conj definition-refusal)
+          :else                         (send r :lookup args {:to-definition true}))))
+
 (defmethod run-command :show-docs [r _]
   (project-only r (fn [{s :state :as r}]
-                    (let [{:keys [path state]} (active-buffer s)]
-                      (if-let [sym (some-> state editor/symbol-at)]
-                        (send-with-entry r :lookup {:path path :sym sym :ns (model/ns-of (editor/text state))}
-                                         {:kind :doc :path path :sym sym})
-                        r)))))
+                    (if-let [{:keys [path sym] :as args} (lookup-args (active-buffer s))]
+                      (send-with-entry r :lookup args {:kind :doc :path path :sym sym})
+                      r))))
 
 ;; ── Replies ─────────────────────────────────────────────────────────────────
 
@@ -580,10 +597,11 @@
   (`[:close-tab id]` closes the tab, asking again if it has unsaved changes by then), and a
   save that created the file asks for the path list again. It reads the file again on
   `:conflict`. `:read-settings` and `:save-settings` do the same for the settings file, and
-  a saved settings file asks for `:config` again. An `:eval`, `:load-file` or `:lookup` reply fills in its results entry,
-  whatever its status. A `:completions` reply answers the editor's request with the
-  candidates, or with `nil` when it is not `:ok`. A `:config` reply stores the look and
-  feel and shows each problem as a warning toast. An `:interrupt` reply shows its message,
+  a saved settings file asks for `:config` again. An `:eval`, `:load-file` or `:lookup`
+  reply fills in its results entry, whatever its status, except a `:lookup` for go to
+  definition, which opens the definition. A `:completions` reply answers the editor's
+  request with the candidates, or with `nil` when it is not `:ok`. A `:config` reply
+  stores the look and feel and shows each problem as a warning toast. An `:interrupt` reply shows its message,
   if any, as a toast. Any other reply that is not `:ok` shows its message as a toast."
   (fn [_r req _reply] (:op req)))
 
@@ -669,7 +687,28 @@
 
 (defmethod on-reply :eval      [r {:keys [path]} reply] (evaluated r path reply))
 (defmethod on-reply :load-file [r {:keys [path]} reply] (evaluated r path reply))
-(defmethod on-reply :lookup    [r _req reply] (fill-entry r reply))
+(declare open-at)
+
+(defn- definition-reply
+  "Returns the result `r` after `reply`, nREPL's lookup of the symbol `sym`, for go to definition.
+  A definition in a project file opens it at its line, or at the top when nREPL gives none,
+  see [[bare-edit.model/definition]]. Anything else is a toast: a failed lookup, a symbol
+  that is not loaded, a file that several project paths could be, and a definition outside
+  the project."
+  [{s :state :as r} sym {:keys [status message info]}]
+  (let [plain (model/source-path (:file info))
+        line  (parse-long (str (:line info)))
+        found (model/definition plain (:paths s))]
+    (cond
+      (not= :ok status)  (toast r :error message)
+      (empty? info)      (toast r :info (str sym " is not loaded. Evaluate its namespace first."))
+      (:path found)      (open-at r (:path found) (or line 1))
+      (:ambiguous found) (toast r :info (str plain " could be " (str/join " or " (:ambiguous found)) "."))
+      :else              (toast r :info (str sym " is defined in " (or plain "an unknown file")
+                                             (when line (str ", line " line)) ", outside the project.")))))
+
+(defmethod on-reply :lookup [r {:keys [to-definition sym]} reply]
+  (if to-definition (definition-reply r sym reply) (fill-entry r reply)))
 
 (defmethod on-reply :completions [r {:keys [token]} {:keys [status candidates]}]
   ;; any status but :ok answers nil, so the editor offers the words of the file instead

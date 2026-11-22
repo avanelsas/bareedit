@@ -1,7 +1,7 @@
 (ns bare-edit.model
   "Pure functions over plain values for the editor's files.
-  They build the file tree, rank the file palette, check the path of a new file, and decide
-  what happens to a file changed on disk."
+  They build the file tree, rank the file palette, check the path of a new file, decide
+  what happens to a file changed on disk, and find the project file of a definition."
   (:require [clojure.string :as str]))
 
 (defn- name-pieces
@@ -214,3 +214,34 @@
   [code n]
   (let [line (str/trim (first (str/split-lines (str code))))]
     (if (> (count line) n) (str (subs line 0 n) "…") line)))
+
+(defn source-path
+  "The plain path in `file`, where nREPL says a var is defined, or `file` as it is.
+  nREPL may give a URL: a `file:` URL becomes its path, with `%20` and the like decoded,
+  and a `jar:` URL becomes the path inside the jar, after `!/`."
+  [file]
+  (cond (nil? file)                    nil
+        (str/starts-with? file "file:") #?(:clj  (.getPath (java.net.URI. file))
+                                           :cljs (js/decodeURIComponent (subs file 5)))
+        (str/starts-with? file "jar:")  (or (second (str/split file #"!/" 2)) file)
+        :else                           file))
+
+(defn definition
+  "The project file that `file`, a plain path where a var is defined, names among `paths`.
+  The first rule that fits decides: a project path for code evaluated in the editor is
+  that path, an absolute path is the longest project path it ends with, and a path
+  relative to a source folder, as `require` loads, is the project path that ends with it.
+  Returns `{:path path}`, `{:ambiguous paths}` when several project paths end with a
+  relative path, or `nil` when none fits, as for a file in a jar or code typed at a REPL.
+  nREPL's URLs are made plain paths first, see [[source-path]]."
+  [file paths]
+  (when (seq file)
+    (let [exact    (some #{file} paths)
+          absolute (str/starts-with? file "/")
+          longest  (when absolute
+                     (->> paths (filter #(str/ends-with? file (str "/" %))) (sort-by count) last))
+          relative (when-not absolute (sort (filter #(str/ends-with? % (str "/" file)) paths)))]
+      (cond exact                  {:path exact}
+            longest                {:path longest}
+            (= 1 (count relative)) {:path (first relative)}
+            (seq relative)         {:ambiguous (vec relative)}))))

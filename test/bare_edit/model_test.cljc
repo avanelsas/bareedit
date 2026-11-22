@@ -1,5 +1,7 @@
 (ns bare-edit.model-test
-  "Tests the file tree, the rule for files changed on disk, and reading the code of a file."
+  "Tests the pure functions over the editor's files.
+  They build the file tree, apply the rule for files changed on disk, read the code of a
+  file and find the project file of a definition."
   (:require [bare-edit.model :as model]
             [clojure.test :refer [deftest is are]]))
 
@@ -128,3 +130,26 @@
     "notes.txt"        :text
     "Makefile"         :text
     ".gitignore"       :text))
+
+(deftest definitions
+  (let [paths ["src/a/core.clj" "test/a/core.clj" "src/b.clj" "b.clj" "dev/user.clj"]]
+    (are [file found] (= found (model/definition file paths))
+      "src/a/core.clj"                         {:path "src/a/core.clj"}
+      "src/b.clj"                              {:path "src/b.clj"}
+      "user.clj"                               {:path "dev/user.clj"}
+      "/Users/me/proj/src/b.clj"               {:path "src/b.clj"}
+      "/Users/me/proj/b.clj"                   {:path "b.clj"}
+      "/Users/me/other/c.clj"                  nil
+      "a/core.clj"                             {:ambiguous ["src/a/core.clj" "test/a/core.clj"]}
+      "b.clj"                                  {:path "b.clj"}
+      "clojure/string.clj"                     nil
+      "NO_SOURCE_PATH"                         nil
+      ""                                       nil
+      nil                                      nil)))
+
+(deftest source-paths
+  (are [file path] (= path (model/source-path file))
+    "file:/Users/me/my%20proj/a.clj"                   "/Users/me/my proj/a.clj"
+    "jar:file:/m2/clojure.jar!/clojure/string.clj"     "clojure/string.clj"
+    "clojure/string.clj"                               "clojure/string.clj"
+    nil                                                nil))
