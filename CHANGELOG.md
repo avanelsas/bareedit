@@ -7,6 +7,11 @@ the command's options and the keys may still change.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-22
+
+BareEdit finds in the whole project, in a find bar of its own, and has a read-only demo on
+GitHub Pages.
+
 ### Added
 
 - **A read-only demo on GitHub Pages.** It shows BareEdit with its own code. It cannot
@@ -65,6 +70,7 @@ The first release.
 - **Command line.** `--help`, `--version`, `--no-open` and `--build`. An unknown option
   stops with a message.
 
-[Unreleased]: https://github.com/avanelsas/bareedit/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/avanelsas/bareedit/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/avanelsas/bareedit/releases/tag/v0.3.0
 [0.2.0]: https://github.com/avanelsas/bareedit/releases/tag/v0.2.0
 [0.1.0]: https://github.com/avanelsas/bareedit/releases/tag/v0.1.0
