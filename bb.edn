@@ -24,9 +24,12 @@
   install {:doc "Build the jar and install it in the local Maven repository"
            :depends [build]
            :task (shell "clojure -T:build install")}
-  github-pages-demo {:doc "Build the read-only demo for GitHub Pages into target/github-pages-demo"
+  github-pages-demo {:doc "Build the read-only demo for GitHub Pages into the folder of its build in shadow-cljs.edn"
                      :extra-paths ["github-pages-demo/src"]
-                     :task (let [out "target/github-pages-demo"]
+                     :requires ([clojure.edn :as edn])
+                     :task (let [js  (-> (slurp "shadow-cljs.edn") edn/read-string
+                                         (get-in [:builds :github-pages-demo :output-dir]))
+                                 out (str (fs/parent js))]
                              (shell "npx shadow-cljs release github-pages-demo")
                              (fs/copy "resources/public/index.html" (str out "/index.html")
                                       {:replace-existing true})
