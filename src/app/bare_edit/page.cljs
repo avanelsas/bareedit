@@ -315,17 +315,46 @@
     :doc  (str "Docs: " sym)
     :out  "Output"))
 
+(def ^:private path-index
+  "The index of the path list given, see [[bare-edit.model/path-index]].
+  It keeps its last answer and gives it again for the same path list, which changes only
+  when files come or go, so a render does not group thousands of paths again."
+  (let [last-answer (atom nil)]
+    (fn [paths]
+      (let [[seen grouped] @last-answer]
+        (if (identical? seen paths)
+          grouped
+          (let [grouped (model/path-index paths)]
+            (reset! last-answer [paths grouped])
+            grouped))))))
+
+(defn- linked
+  "The text `text` with each source location in it that names a file of `paths` as a link.
+  The locations are looked up in the index of `paths`, see [[path-index]]. A click on a
+  link calls `dispatch` with `[:open-location path line]`. A location that names no
+  project file, or several, stays text, see [[bare-edit.model/source-pieces]] and
+  [[bare-edit.model/definition]]."
+  [text paths dispatch]
+  (for [piece (model/source-pieces text)]
+    (if-let [path (and (map? piece)
+                       (:path (model/definition (:file piece) (path-index paths))))]
+      [:span {:class "location" :title (str "Open " path)
+              :on-click (fn [_] (dispatch [:open-location path (:line piece)]))}
+       (:text piece)]
+      (if (map? piece) (:text piece) piece))))
+
 (defn- entry-body
   "The body of the results entry `entry`, whose controls call `dispatch`.
   Output comes first, then the value, the docs or the message. Long text is folded, see
-  [[folded]], unless `expanded?`, with a button that shows it all."
-  [{:keys [id kind status out err value message info sym]} expanded? dispatch]
+  [[folded]], unless `expanded?`, with a button that shows it all. A source location in the
+  output that names a file of `paths` is a link to it, see [[linked]]."
+  [{:keys [id kind status out err value message info sym]} expanded? paths dispatch]
   (let [[out out-cut?]     (folded out expanded?)
         [value value-cut?] (folded value expanded?)
         cut?               (or out-cut? value-cut?)]
     [:div {:class "entry-body"}
-     (when (seq out) [:pre {:class "out"} out])
-     (when (seq err) [:pre {:class "err"} err])
+     (when (seq out) [:pre {:class "out"} (linked out paths dispatch)])
+     (when (seq err) [:pre {:class "err"} (linked err paths dispatch)])
      (case status
        :running [:x-button {:variant "secondary" :size "sm" :on-click (fn [_] (dispatch [:interrupt id]))}
                  "Interrupt"]
@@ -347,19 +376,20 @@
 (defn entry-view
   "The results entry `entry`, shown in full when `expanded?`, whose controls call `dispatch`.
   Its header shows the status mark and the heading, and a click on it calls `dispatch` with
-  `[:jump-to id]` when the entry has code to go to."
-  [{:keys [id status path] :as entry} expanded? dispatch]
+  `[:jump-to id]` when the entry has code to go to. `paths` are the project's paths, for the
+  links in its output."
+  [{:keys [id status path] :as entry} expanded? paths dispatch]
   [:div {:class "entry"}
    [:div (if path
            {:class "entry-head jumps" :on-click (fn [_] (dispatch [:jump-to id]))}
            {:class "entry-head"})
     [:span {:class (str "mark " (some-> status name))} (get status-marks status "")]
     [:span {:class "title"} (entry-title entry)]]
-   (entry-body entry expanded? dispatch)])
+   (entry-body entry expanded? paths dispatch)])
 
 (defn results-view
   "The results column for the state `s`, whose controls call `dispatch`: a bar and the entries."
-  [{:keys [results unfolded]} dispatch]
+  [{:keys [results unfolded paths]} dispatch]
   [:div {:class "results"}
    [:div {:class "bar results-bar"}
     [:span "Results"]
@@ -367,7 +397,7 @@
                 :on-click (fn [_] (dispatch [:command (steps/command-by-name "clear-results")]))}
      "Clear"]]
    (if (seq results)
-     [:div {:class "entries"} (for [e results] (entry-view e (contains? unfolded (:id e)) dispatch))]
+     [:div {:class "entries"} (for [e results] (entry-view e (contains? unfolded (:id e)) paths dispatch))]
      [:div {:class "empty"} "Evaluate a form to see its result here."])])
 
 (defn tab-label

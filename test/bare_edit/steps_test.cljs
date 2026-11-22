@@ -390,6 +390,11 @@
     (testing "with no symbol at the cursor, nothing happens"
       (is (= [] (:fx (run (at-cursor (opened "") "|") [:command (command :go-to-definition)])))))))
 
+(deftest opening-locations
+  (let [r (run connected [:open-location "src/b.clj" 7])]
+    (is (= "src/b.clj" (get-in r [:state :buffers 1 :path])))
+    (is (= 7 (get-in r [:state :buffers 1 :goto])))))
+
 (deftest the-results-column
   (let [s (-> (opened "") (steps/add-entry {:id 7 :kind :eval :path "src/a.clj" :line 3 :status :running}))]
     (testing "a disconnect leaves no entry running"

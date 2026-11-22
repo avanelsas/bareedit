@@ -107,7 +107,7 @@
 (deftest result-entries
   (let [events (atom [])
         entry  {:id 7 :kind :eval :path "src/a.clj" :line 3 :form "(+ 1 2)" :status :ok :out "hi\n" :value "3"}
-        h      (page/entry-view entry false #(swap! events conj %))]
+        h      (page/entry-view entry false [] #(swap! events conj %))]
     (testing "the header names the file, the line and the form"
       (is (= "src/a.clj" (:path entry)))
       (is (re-find #"a\.clj:3  \(\+ 1 2\)" (text h))))
@@ -119,18 +119,35 @@
   (testing "a running entry has an interrupt button"
     (let [events (atom [])
           h      (page/entry-view {:id 7 :kind :eval :path "a.clj" :line 1 :form "x" :status :running}
-                                  false #(swap! events conj %))]
+                                  false [] #(swap! events conj %))]
       (click (first (elements h :x-button)))
       (is (= [[:interrupt 7]] @events))))
   (testing "an entry that failed shows its message"
     (is (re-find #"boom" (text (page/entry-view {:id 1 :kind :eval :path "a.clj" :line 1 :form "x"
-                                                 :status :error :message "boom"} false identity)))))
+                                                 :status :error :message "boom"} false [] identity)))))
   (testing "docs show the name, the arglists and the doc"
     (is (re-find #"clojure.core/map.*\[f coll\].*Returns"
                  (text (page/entry-view {:id 1 :kind :doc :sym "map" :status :ok
                                           :info {:ns "clojure.core" :name "map" :arglists-str "([f coll])"
                                                  :doc "Returns a lazy sequence."}}
-                                         false identity))))))
+                                         false [] identity))))))
+
+(deftest links-in-output
+  (let [events (atom [])
+        err    "Execution error (ArithmeticException) at demo.core/boom (core.clj:4).\nDivide by zero\n"
+        h      (page/entry-view {:id 2 :kind :eval :path "src/a.clj" :line 1 :form "(boom 1)"
+                                 :status :error :message "The evaluation threw" :err err
+                                 :out "\tat clojure.lang.Numbers.divide(Numbers.java:190)\n"}
+                                false ["src/a.clj" "src/demo/core.clj"] #(swap! events conj %))
+        links  (filter #(= "location" (:class (second %))) (elements h :span))]
+    (testing "a location in a project file is a link, and one outside stays text"
+      (is (= ["core.clj:4"] (map text links)))
+      (is (re-find #"Numbers\.java:190" (text h))))
+    (testing "the text reads as before"
+      (is (re-find #"at demo\.core/boom \(core\.clj:4\)\.\nDivide by zero" (text h))))
+    (testing "a click opens the file at the line"
+      (click (first links))
+      (is (= [[:open-location "src/demo/core.clj" 4]] @events)))))
 
 (deftest folding-long-results
   (let [long-value (apply str (interpose "\n" (range 20)))]
@@ -141,13 +158,13 @@
       (let [events (atom [])
             h      (page/entry-view {:id 4 :kind :eval :path "a.clj" :line 1 :form "x" :status :ok
                                      :value long-value}
-                                    false #(swap! events conj %))]
+                                    false [] #(swap! events conj %))]
         (click (last (elements h :x-button)))
         (is (= [[:unfold 4]] @events))))
     (testing "an unfolded entry shows it all, with a button that folds it again"
       (let [h (page/entry-view {:id 4 :kind :eval :path "a.clj" :line 1 :form "x" :status :ok
                                 :value long-value}
-                               true identity)]
+                               true [] identity)]
         (is (re-find #"19" (text h)))
         (is (= "Show less" (text (last (elements h :x-button)))))))))
 

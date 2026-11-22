@@ -9,6 +9,8 @@ the command's options and the keys may still change.
 
 ### Added
 
+- **Links in the results column.** In output and errors, a place in a project file, such as
+  `core.clj:4` in an error or a stack trace, opens the file at that line.
 - **Go to definition** (`F12`). It opens the file where the symbol at the cursor is
   defined, at its line, from the REPL's answer. A definition outside the project is named
   in a message.
