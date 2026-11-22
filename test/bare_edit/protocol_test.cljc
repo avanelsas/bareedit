@@ -42,6 +42,11 @@
     (is (= {:text "a" :version "v2"} (p/unless-known "v1" {:text "a" :version "v2"})))
     (is (= {:text "a" :version "v2"} (p/unless-known nil {:text "a" :version "v2"})))))
 
+(deftest kind-examples
+  (testing "each kind's example is a value of that kind"
+    (doseq [[kind {:keys [valid? example]}] p/kinds]
+      (is (valid? example) (str kind)))))
+
 (deftest kinds
   (are [msg k] (= k (p/kind msg))
     (p/request :paths 1 {})          :request

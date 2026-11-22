@@ -16,7 +16,7 @@
 (deftest every-operation
   (testing "each operation of the protocol gets a well-formed reply"
     (doseq [[op {:keys [request]}] p/ops
-            :let [args (into {} (for [[k kind] request] [k (nth (p/kinds kind) 2)]))]]
+            :let [args (into {} (for [[k kind] request] [k (:example (p/kinds kind))]))]]
       (is (nil? (p/reply-problems op (ask op args))) (str op)))))
 
 (deftest the-project
