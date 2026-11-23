@@ -22,7 +22,7 @@ A small, local, browser-based editor for Clojure and ClojureScript, with a file 
 ## Install
 
 ```sh
-bbin install com.github.avanelsas/bareedit --mvn/version 0.3.0
+bbin install com.github.avanelsas/bareedit --mvn/version 0.4.0
 ```
 
 This adds the `bareedit` command. To upgrade, run it again with the new version. To remove it, run `bbin uninstall bareedit`.
