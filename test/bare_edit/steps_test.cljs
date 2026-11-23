@@ -562,6 +562,24 @@
   [r]
   (for [[kind req] (:fx r) :when (= :send kind)] (dissoc req :id)))
 
+(deftest saving-and-loading
+  (let [s (typed (opened "(ns a)") "(ns a)\n(def x 2)")
+        r (run s [:command (command :save-and-load)])]
+    (testing "it saves the file first"
+      (is (= [{:op :save :path "src/a.clj" :text "(ns a)\n(def x 2)" :version "v1"}] (sent r))))
+    (testing "once saved, it loads the text that was saved, with a results entry"
+      (let [r2 (run (typed (:state r) "(ns a)\n(def x 3)") (reply-to r :ok {:version "v2"}))]
+        (is (= [{:op :load-file :path "src/a.clj" :text "(ns a)\n(def x 2)"}] (sent r2)))
+        (is (= "(load-file \"src/a.clj\")" (:form (first (get-in r2 [:state :results])))))))
+    (testing "a save that fails loads nothing"
+      (doseq [status [:conflict :error]]
+        (is (not-any? #(= :load-file (:op %))
+                      (sent (run (:state r) (reply-to r status {:message "no"}))))))))
+  (testing "a .cljs file and a file that is not Clojure are refused with a toast"
+    (doseq [[path kind] [["src/a.cljs" :cljs] ["README.md" nil]]]
+      (let [s (assoc-in (opened "x") [:buffers 1 :path] path)]
+        (is (= [(steps/load-refusals kind)] (:fx (run s [:command (command :save-and-load)]))))))))
+
 (deftest the-settings-tab
   (testing "opening asks for the settings file, not a project file"
     (is (= [{:op :read-settings}] (sent (run connected [:command {:id :open-settings}])))))

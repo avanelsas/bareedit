@@ -7,6 +7,11 @@ the command's options and the keys may still change.
 
 ## [Unreleased]
 
+### Added
+
+- **Save and load file** (`Mod-Shift-s`). It saves a `.clj` or `.cljc` file and loads it into
+  the REPL.
+
 ## [0.4.0] - 2026-11-23
 
 BareEdit goes to a definition with `F12`, links the places in errors to their files, and

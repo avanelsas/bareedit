@@ -11,6 +11,7 @@ The details behind the [README](../README.md).
 | `Mod-Shift-p` or `F1` | Command palette: every command, with its keys |
 | `Mod-p` | Go to file |
 | `Mod-s` / `Mod-Alt-s` | Save / save all |
+| `Mod-Shift-s` | Save and load the file into the REPL |
 | `Mod-Enter` | Evaluate the form at the cursor |
 | `Mod-Shift-Enter` | Evaluate the top-level form |
 | `Mod-.` | Interrupt the evaluation |
@@ -29,6 +30,7 @@ The keys for structural editing are in [Structural editing](#structural-editing)
 - **Evaluate form** (`Mod-Enter`) evaluates the selection, or else the form that ends at the cursor, or else the innermost form around it.
 - **Evaluate top-level form** (`Mod-Shift-Enter`) evaluates the top-level form at the cursor. Inside a rich comment, `(comment ...)`, it evaluates the form inside the comment that holds the cursor, so the forms there run one by one. On the word `comment` it evaluates the whole comment.
 - **Evaluate file** loads the text of the file, saved or not.
+- **Save and load file** (`Mod-Shift-s`) saves a `.clj` or `.cljc` file and then loads it into the REPL, so the running code matches the file. It loads what was saved, and nothing when the save fails. A `.cljs` file needs only a save, since shadow-cljs reloads it.
 - **Interrupt** (`Mod-.`) stops the newest evaluation that still runs. Without `-Djdk.attach.allowAttachSelf` on Java 20 and later, the session is freed but the code keeps running, and the editor says so.
 - **Namespaces.** A form is evaluated in the namespace of its file's `ns` form, or in `user` when there is none (`cljs.user` in a `.cljs` file). An unloaded namespace gives a message in Clojure. In ClojureScript it is created empty, with no message.
 
