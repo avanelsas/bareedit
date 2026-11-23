@@ -395,6 +395,16 @@
     (is (= "src/b.clj" (get-in r [:state :buffers 1 :path])))
     (is (= 7 (get-in r [:state :buffers 1 :goto])))))
 
+(deftest escape-with-several-selections
+  (let [s  (at-cursor (opened "") "(a x| x)")
+        st (get-in s [:buffers 1 :state])
+        two (.-state (editor/edit (.-state (editor/edit st :select-next-occurrence)) :select-next-occurrence))]
+    (testing "Escape keeps one selection when there are several"
+      (is (= [[:edit :single-selection]]
+             (:fx (run (assoc-in s [:buffers 1 :state] two) [:command (command :close)])))))
+    (testing "with one selection it does nothing"
+      (is (= [] (:fx (run s [:command (command :close)])))))))
+
 (deftest the-results-column
   (let [s (-> (opened "") (steps/add-entry {:id 7 :kind :eval :path "src/a.clj" :line 3 :status :running}))]
     (testing "a disconnect leaves no entry running"
@@ -561,6 +571,24 @@
   "The requests the result `r` sends, without their ids."
   [r]
   (for [[kind req] (:fx r) :when (= :send kind)] (dissoc req :id)))
+
+(deftest saving-and-loading
+  (let [s (typed (opened "(ns a)") "(ns a)\n(def x 2)")
+        r (run s [:command (command :save-and-load)])]
+    (testing "it saves the file first"
+      (is (= [{:op :save :path "src/a.clj" :text "(ns a)\n(def x 2)" :version "v1"}] (sent r))))
+    (testing "once saved, it loads the text that was saved, with a results entry"
+      (let [r2 (run (typed (:state r) "(ns a)\n(def x 3)") (reply-to r :ok {:version "v2"}))]
+        (is (= [{:op :load-file :path "src/a.clj" :text "(ns a)\n(def x 2)"}] (sent r2)))
+        (is (= "(load-file \"src/a.clj\")" (:form (first (get-in r2 [:state :results])))))))
+    (testing "a save that fails loads nothing"
+      (doseq [status [:conflict :error]]
+        (is (not-any? #(= :load-file (:op %))
+                      (sent (run (:state r) (reply-to r status {:message "no"}))))))))
+  (testing "a .cljs file and a file that is not Clojure are refused with a toast"
+    (doseq [[path kind] [["src/a.cljs" :cljs] ["README.md" nil]]]
+      (let [s (assoc-in (opened "x") [:buffers 1 :path] path)]
+        (is (= [(steps/load-refusals kind)] (:fx (run s [:command (command :save-and-load)]))))))))
 
 (deftest the-settings-tab
   (testing "opening asks for the settings file, not a project file"

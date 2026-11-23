@@ -375,7 +375,7 @@
 
 (defn save-buffer
   "Returns the result `r` with a save of the buffer `id` to send.
-  `then` is what to do once the save succeeds, such as `[:close-tab id]`, kept with the
+  `then` is what to do once the save succeeds, `[:close-tab id]` or `[:load]`, kept with the
   pending request as `:then`, see [[send]]. The settings file is saved with
   `:save-settings`, and its pending request keeps `:path :settings`. A save of a [[busy?]] file is refused with a
   toast, and its `then` is dropped with it. A missing or loading buffer leaves `r`
@@ -454,6 +454,7 @@
    {:id :eval-form         :group :repl      :label "Evaluate form"           :keys "Mod-Enter"       :scope :editor}
    {:id :eval-top-form     :group :repl      :label "Evaluate top-level form" :keys "Mod-Shift-Enter" :scope :editor}
    {:id :eval-file         :group :repl      :label "Evaluate file"}
+   {:id :save-and-load     :group :repl      :label "Save and load file"      :keys "Mod-Shift-s"}
    {:id :interrupt         :group :repl      :label "Interrupt evaluation"    :keys "Mod-."}
    {:id :show-docs         :group :repl      :label "Show docs"}
    {:id :go-to-definition  :group :repl      :label "Go to definition"        :keys "F12"             :scope :editor}
@@ -463,6 +464,7 @@
    {:id :find-in-project   :group :edit      :label "Find in project"         :keys "Mod-Shift-f"}
    {:id :find-next         :group :edit      :label "Find next"               :keys ["F3" "Mod-g"]}
    {:id :find-previous     :group :edit      :label "Find previous"           :keys ["Shift-F3" "Mod-Shift-g"]}
+   {:id :select-next-occurrence :group :edit :label "Select next occurrence"  :keys "Mod-d"           :scope :editor}
    {:id :toggle-comment    :group :edit      :label "Toggle comment"          :keys "Mod-/"           :scope :editor}
    {:id :show-completions  :group :edit      :label "Show completions"        :keys "Ctrl-Space"      :scope :editor}
    {:id :reindent          :group :edit      :label "Reindent the current form"                       :scope :editor :clojure true}
@@ -476,7 +478,7 @@
    {:id :shrink-selection  :group :structure :label "Shrink selection"        :keys "Alt-ArrowDown"   :scope :editor :clojure true}
    {:id :open-settings     :group :settings  :label "Open settings"}
    {:id :command-palette   :label "Show all commands" :keys ["Mod-Shift-p" "F1"]}
-   {:id :close             :label "Close the palette or the find bar" :keys "Escape"}])
+   {:id :close             :label "Close the palette or the find bar, or keep one selection" :keys "Escape"}])
 
 (defn command-dispatch
   "The value [[run-command]] dispatches `command` on.
@@ -535,6 +537,9 @@
 (defmethod run-command :close [{s :state :as r} _]
   (cond (:palette s) (close-palette r)
         (:find s)    (-> r (change assoc :find nil) (update :fx conj [:focus-editor]))
+        ;; CodeMirror's own Escape for this is in a keymap the editor does not load
+        (some-> (active-buffer s) :state editor/several-selections?)
+        (update r :fx conj [:edit :single-selection])
         :else        r))
 
 (defmethod run-command :new-file [{s :state :as r} _]
@@ -555,13 +560,32 @@
 (defmethod run-command :clear-results  [r _] (change r assoc :results [] :unfolded #{}))
 (defmethod run-command :toggle-results [r _] (change r update :results-open? not))
 
+(defn- load-text
+  "Returns the result `r` with `text`, the text of the file `path`, loaded into the REPL.
+  It gets a results entry, as an evaluation of the whole file."
+  [r path text]
+  (send-with-entry r :load-file {:path path :text text}
+                   {:kind :eval :path path :line 1 :form (str "(load-file \"" path "\")")}))
+
 (defmethod run-command :eval-file [r _]
   (project-only r (fn [{s :state :as r}]
                     (if-let [{:keys [path state]} (active-buffer s)]
-                      (send-with-entry r :load-file {:path path :text (editor/text state)}
-                                       {:kind :eval :path path :line 1
-                                        :form (str "(load-file \"" path "\")")})
+                      (load-text r path (editor/text state))
                       r))))
+
+(def load-refusals
+  "The toast for save and load in a file it does not load, by the file's session kind.
+  shadow-cljs reloads a `.cljs` file by itself when it is saved."
+  {:cljs [:toast :info "shadow-cljs reloads .cljs files when they are saved, so Save works."]
+   nil   [:toast :info "Save and load works in .clj and .cljc files."]})
+
+(defmethod run-command :save-and-load [r _]
+  (project-only r (fn [{s :state :as r}]
+                    (let [{:keys [id path]} (active-buffer s)
+                          kind              (p/kind-for path)]
+                      (cond (nil? id)       r
+                            (not= :clj kind) (update r :fx conj (load-refusals kind))
+                            :else           (save-buffer r id [:load]))))))
 
 (defn- lookup-args
   "The arguments of a `:lookup` of the symbol at the cursor in `buffer`, or `nil`.
@@ -744,8 +768,9 @@
   "Returns the result `r` after a save of `text` to `path`, sent with the version `sent-version`.
   `then` is the save's follow-up, and `status`, `version` and `message` come from the reply.
   The disk text of each buffer of `path` becomes `text`, a new project file adds itself to
-  the path list, and `[:close-tab id]` closes that tab. A conflict reads the file again,
-  which then asks whether to keep the buffer or take the disk."
+  the path list, `[:close-tab id]` closes that tab, and `[:load]` loads `text`, what
+  the disk now holds, into the REPL. A conflict reads the file again, which then asks
+  whether to keep the buffer or take the disk, and loads nothing."
   [r {:keys [path text then] sent-version :version} {:keys [status version message]}]
   (case status
     ;; the disk now holds the text that was sent, which may differ from the buffer's text
@@ -757,7 +782,8 @@
                   ;; a save that created the file adds it to the path list
                   (and (= :absent sent-version) (not (model/settings? path))) (send :paths {})
                   ;; through close-tab, which asks again if text was typed after the save went out
-                  (= :close-tab follow-up) (close-tab id)))
+                  (= :close-tab follow-up) (close-tab id)
+                  (= :load follow-up)      (load-text path text)))
     :conflict (read-paths r [path])
     (toast r :error message)))
 

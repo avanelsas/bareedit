@@ -15,7 +15,8 @@
             ["@codemirror/language" :refer [bracketMatching HighlightStyle syntaxHighlighting
                                             syntaxTree]]
             ["@codemirror/state" :refer [Compartment EditorState RangeSetBuilder StateEffect StateField]]
-            ["@codemirror/view" :refer [Decoration EditorView keymap lineNumbers ViewPlugin]]
+            ["@codemirror/search" :refer [selectNextOccurrence]]
+            ["@codemirror/view" :refer [Decoration drawSelection EditorView keymap lineNumbers ViewPlugin]]
             ["@lezer/highlight" :refer [highlightTree tags]]
             [bare-edit.search :as search]
             [clojure.string :as str]
@@ -462,14 +463,17 @@
 
 (def extensions
   "The extensions every editor state gets, whatever its language.
-  These are line numbers, soft wrapping of long lines, the undo history, CodeMirror's
-  bracket matching, the find bar's query and its marks (see [[match-highlighter]]),
+  These are line numbers, soft wrapping of long lines, the undo history, several
+  selections drawn by CodeMirror, CodeMirror's bracket matching, the find bar's query and
+  its marks (see [[match-highlighter]]),
   completion (see [[complete]]), [[highlighting]] and [[theme]].
   CodeMirror's bracket matching replaces clojure-mode's, which crashes on current
   CodeMirror versions."
   #js [(lineNumbers)
        (.-lineWrapping EditorView)
        (history)
+       (.of (.-allowMultipleSelections EditorState) true)
+       (drawSelection)
        (bracketMatching)
        find-field
        match-highlighter
@@ -684,11 +688,26 @@
         (format-lines state from to))
       (format-lines state (.-from main) (.-to main)))))
 
+(defn- state-command
+  "The transaction that CodeMirror's state command `command` makes on `state`, or `nil`."
+  [command ^js state]
+  (let [made (volatile! nil)]
+    (command #js {:state state :dispatch #(vreset! made %)})
+    @made))
+
+(defn several-selections?
+  "Whether `state` has more than one selection, as select next occurrence makes."
+  [^js state]
+  (> (.. state -selection -ranges -length) 1))
+
 (def edits
   "The editor commands that change the text or the selection, by command id.
   Each is a function from an `EditorState` to a `Transaction`, or `nil`. A transaction may
   change nothing, when the command does not apply at the cursor. Each is pure except
-  `:kill`, which also copies the killed text to the clipboard."
+  `:kill`, which also copies the killed text to the clipboard. `:select-next-occurrence`
+  selects the word at the cursor, and then adds the next occurrence of the selection as
+  another selection. `:single-selection` keeps only the main selection, which Escape runs
+  when there are several, see [[several-selections?]]."
   {:slurp-forward    (commands/slurp 1)
    :slurp-backward   (commands/slurp -1)
    :barf-forward     (commands/barf 1)
@@ -697,7 +716,9 @@
    :kill             commands/kill*
    :expand-selection sel-history/selection-grow*
    :shrink-selection sel-history/selection-return*
-   :reindent         reindent})
+   :reindent         reindent
+   :select-next-occurrence (partial state-command selectNextOccurrence)
+   :single-selection (fn [^js state] (.update state #js {:selection (.asSingle (.-selection state))}))})
 
 (defn edit
   "The transaction that runs the command `id` of [[edits]] on `state`, or `nil`.

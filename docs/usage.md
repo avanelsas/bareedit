@@ -11,6 +11,7 @@ The details behind the [README](../README.md).
 | `Mod-Shift-p` or `F1` | Command palette: every command, with its keys |
 | `Mod-p` | Go to file |
 | `Mod-s` / `Mod-Alt-s` | Save / save all |
+| `Mod-Shift-s` | Save and load the file into the REPL |
 | `Mod-Enter` | Evaluate the form at the cursor |
 | `Mod-Shift-Enter` | Evaluate the top-level form |
 | `Mod-.` | Interrupt the evaluation |
@@ -18,6 +19,7 @@ The details behind the [README](../README.md).
 | `F12` | Go to the definition of the symbol at the cursor |
 | `Alt-w`, `Alt-[`, `Alt-]` | Close, previous and next tab |
 | `Mod-f` | Find and replace in the file |
+| `Mod-d` | Select the word at the cursor, then add its next occurrence |
 | `Mod-Shift-f` | Find in the project |
 | `F3` or `Mod-g`, `Shift-F3` or `Mod-Shift-g` | Next and previous match |
 | `Ctrl-Space` | Show completions |
@@ -29,6 +31,7 @@ The keys for structural editing are in [Structural editing](#structural-editing)
 - **Evaluate form** (`Mod-Enter`) evaluates the selection, or else the form that ends at the cursor, or else the innermost form around it.
 - **Evaluate top-level form** (`Mod-Shift-Enter`) evaluates the top-level form at the cursor. Inside a rich comment, `(comment ...)`, it evaluates the form inside the comment that holds the cursor, so the forms there run one by one. On the word `comment` it evaluates the whole comment.
 - **Evaluate file** loads the text of the file, saved or not.
+- **Save and load file** (`Mod-Shift-s`) saves a `.clj` or `.cljc` file and then loads it into the REPL, so the running code matches the file. It loads what was saved, and nothing when the save fails. A `.cljs` file needs only a save, since shadow-cljs reloads it.
 - **Interrupt** (`Mod-.`) stops the newest evaluation that still runs. Without `-Djdk.attach.allowAttachSelf` on Java 20 and later, the session is freed but the code keeps running, and the editor says so.
 - **Namespaces.** A form is evaluated in the namespace of its file's `ns` form, or in `user` when there is none (`cljs.user` in a `.cljs` file). An unloaded namespace gives a message in Clojure. In ClojureScript it is created empty, with no message.
 
@@ -49,6 +52,10 @@ In `.clj` and `.cljc` files, completions come from the REPL, with the kind and n
 - When no watch runs, no runtime is connected, or the watch stops, the result says so. The next evaluation reconnects.
 - A ClojureScript evaluation cannot be interrupted, and docs are not available.
 - Without a `.nrepl-port`, Clojure evaluations use shadow-cljs's own JVM.
+
+## Several selections
+
+**Select next occurrence** (`Mod-d`) selects the word at the cursor. Each press after adds the next occurrence of the selection as another selection, going round to the start of the file. Typing then changes them all at once. Escape keeps only one of them.
 
 ## Find
 
