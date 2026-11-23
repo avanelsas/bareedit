@@ -68,6 +68,24 @@
       "(a)\n(b |c)"                     "(b c)"))
   (testing "between forms there is none"
     (is (nil? (editor/top-level-form-at (at "(a)\n\n|\n(b)")))))
+  (testing "in a rich comment, the form inside it"
+    (are [text want] (= want (form-text editor/top-level-form-at text))
+      "(comment\n  (start {:port |8080})\n  (stop))"   "(start {:port 8080})"
+      "(comment\n  (start)\n  (stop)|)"               "(stop)"
+      "(comment\n  (->> (load) (filter :ad|min) count))" "(->> (load) (filter :admin) count)"
+      "(comment\n  x|)"                                 "x"
+      "(comm|ent\n  (start))"                           "(comment\n  (start))"
+      "|(comment\n  (start))"                           "(comment\n  (start))"
+      "(comment\n  (start))|"                           "(comment\n  (start))"
+      "(comment-helper\n  (st|art))"                    "(comment-helper\n  (start))"
+      "(foo\n  (comment (a|)))"                          "(foo\n  (comment (a)))"))
+  (testing "between the forms of a rich comment there is none"
+    (are [text] (nil? (editor/top-level-form-at (at text)))
+      "(comment\n  (start)\n|\n  (stop))"
+      "(comment\n  ;; a no|te\n  (stop))"
+      "(comment\n  #_(o|ld)\n  (stop))"))
+  (testing "a form in a rich comment knows its own line"
+    (is (= 3 (:line (editor/top-level-form-at (at "(comment\n  (start)\n  (st|op))"))))))
   (testing "a form knows the line it starts on"
     (is (= 2 (:line (editor/top-level-form-at (at "(a)\n(b |c)")))))))
 
