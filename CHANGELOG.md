@@ -11,6 +11,8 @@ the command's options and the keys may still change.
 
 - **Save and load file** (`Mod-Shift-s`). It saves a `.clj` or `.cljc` file and loads it into
   the REPL.
+- **Select next occurrence** (`Mod-d`). Each press adds the next occurrence of the
+  selection as another selection, so typing changes them all.
 
 ## [0.4.0] - 2026-11-23
 

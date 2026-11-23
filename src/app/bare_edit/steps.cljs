@@ -464,6 +464,7 @@
    {:id :find-in-project   :group :edit      :label "Find in project"         :keys "Mod-Shift-f"}
    {:id :find-next         :group :edit      :label "Find next"               :keys ["F3" "Mod-g"]}
    {:id :find-previous     :group :edit      :label "Find previous"           :keys ["Shift-F3" "Mod-Shift-g"]}
+   {:id :select-next-occurrence :group :edit :label "Select next occurrence"  :keys "Mod-d"           :scope :editor}
    {:id :toggle-comment    :group :edit      :label "Toggle comment"          :keys "Mod-/"           :scope :editor}
    {:id :show-completions  :group :edit      :label "Show completions"        :keys "Ctrl-Space"      :scope :editor}
    {:id :reindent          :group :edit      :label "Reindent the current form"                       :scope :editor :clojure true}
@@ -477,7 +478,7 @@
    {:id :shrink-selection  :group :structure :label "Shrink selection"        :keys "Alt-ArrowDown"   :scope :editor :clojure true}
    {:id :open-settings     :group :settings  :label "Open settings"}
    {:id :command-palette   :label "Show all commands" :keys ["Mod-Shift-p" "F1"]}
-   {:id :close             :label "Close the palette or the find bar" :keys "Escape"}])
+   {:id :close             :label "Close the palette or the find bar, or keep one selection" :keys "Escape"}])
 
 (defn command-dispatch
   "The value [[run-command]] dispatches `command` on.
@@ -536,6 +537,9 @@
 (defmethod run-command :close [{s :state :as r} _]
   (cond (:palette s) (close-palette r)
         (:find s)    (-> r (change assoc :find nil) (update :fx conj [:focus-editor]))
+        ;; CodeMirror's own Escape for this is in a keymap the editor does not load
+        (some-> (active-buffer s) :state editor/several-selections?)
+        (update r :fx conj [:edit :single-selection])
         :else        r))
 
 (defmethod run-command :new-file [{s :state :as r} _]

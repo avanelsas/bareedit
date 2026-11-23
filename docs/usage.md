@@ -19,6 +19,7 @@ The details behind the [README](../README.md).
 | `F12` | Go to the definition of the symbol at the cursor |
 | `Alt-w`, `Alt-[`, `Alt-]` | Close, previous and next tab |
 | `Mod-f` | Find and replace in the file |
+| `Mod-d` | Select the word at the cursor, then add its next occurrence |
 | `Mod-Shift-f` | Find in the project |
 | `F3` or `Mod-g`, `Shift-F3` or `Mod-Shift-g` | Next and previous match |
 | `Ctrl-Space` | Show completions |
@@ -51,6 +52,10 @@ In `.clj` and `.cljc` files, completions come from the REPL, with the kind and n
 - When no watch runs, no runtime is connected, or the watch stops, the result says so. The next evaluation reconnects.
 - A ClojureScript evaluation cannot be interrupted, and docs are not available.
 - Without a `.nrepl-port`, Clojure evaluations use shadow-cljs's own JVM.
+
+## Several selections
+
+**Select next occurrence** (`Mod-d`) selects the word at the cursor. Each press after adds the next occurrence of the selection as another selection, going round to the start of the file. Typing then changes them all at once. Escape keeps only one of them.
 
 ## Find
 

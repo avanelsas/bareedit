@@ -395,6 +395,16 @@
     (is (= "src/b.clj" (get-in r [:state :buffers 1 :path])))
     (is (= 7 (get-in r [:state :buffers 1 :goto])))))
 
+(deftest escape-with-several-selections
+  (let [s  (at-cursor (opened "") "(a x| x)")
+        st (get-in s [:buffers 1 :state])
+        two (.-state (editor/edit (.-state (editor/edit st :select-next-occurrence)) :select-next-occurrence))]
+    (testing "Escape keeps one selection when there are several"
+      (is (= [[:edit :single-selection]]
+             (:fx (run (assoc-in s [:buffers 1 :state] two) [:command (command :close)])))))
+    (testing "with one selection it does nothing"
+      (is (= [] (:fx (run s [:command (command :close)])))))))
+
 (deftest the-results-column
   (let [s (-> (opened "") (steps/add-entry {:id 7 :kind :eval :path "src/a.clj" :line 3 :status :running}))]
     (testing "a disconnect leaves no entry running"

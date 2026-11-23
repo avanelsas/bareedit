@@ -89,6 +89,24 @@
   (testing "a form knows the line it starts on"
     (is (= 2 (:line (editor/top-level-form-at (at "(a)\n(b |c)")))))))
 
+(deftest selecting-next-occurrences
+  (let [ranges (fn [^js st] (mapv (fn [^js r] [(.-from r) (.-to r)]) (.. st -selection -ranges)))
+        step   (fn [st] (.-state (editor/edit st :select-next-occurrence)))
+        st     (at "(let [x 1] (+ x| x))")]
+    (testing "the first press selects the word at the cursor"
+      (is (= [[14 15]] (ranges (step st)))))
+    (testing "each press after adds the next occurrence, going round to the start"
+      (is (= [[14 15] [16 17]] (ranges (step (step st)))))
+      (is (= [[6 7] [14 15] [16 17]] (ranges (step (step (step st)))))))
+    (testing "several selections can go back to the main one"
+      (let [st3 (step (step (step st)))]
+        (is (editor/several-selections? st3))
+        (is (not (editor/several-selections? (.-state (editor/edit st3 :single-selection)))))))
+    (testing "typing changes every selection"
+      (let [st3 (step (step (step st)))]
+        (is (= "(let [y 1] (+ y y))"
+               (editor/text (.-state (.update st3 (.replaceSelection st3 "y"))))))))))
+
 (deftest symbols-at-the-cursor
   (are [text want] (= want (editor/symbol-at (at text)))
     "(ma|p inc xs)"     "map"
