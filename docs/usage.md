@@ -27,7 +27,7 @@ The keys for structural editing are in [Structural editing](#structural-editing)
 ## Evaluation
 
 - **Evaluate form** (`Mod-Enter`) evaluates the selection, or else the form that ends at the cursor, or else the innermost form around it.
-- **Evaluate top-level form** (`Mod-Shift-Enter`) evaluates the top-level form at the cursor.
+- **Evaluate top-level form** (`Mod-Shift-Enter`) evaluates the top-level form at the cursor. Inside a rich comment, `(comment ...)`, it evaluates the form inside the comment that holds the cursor, so the forms there run one by one. On the word `comment` it evaluates the whole comment.
 - **Evaluate file** loads the text of the file, saved or not.
 - **Interrupt** (`Mod-.`) stops the newest evaluation that still runs. Without `-Djdk.attach.allowAttachSelf` on Java 20 and later, the session is freed but the code keeps running, and the editor says so.
 - **Namespaces.** A form is evaluated in the namespace of its file's `ns` form, or in `user` when there is none (`cljs.user` in a `.cljs` file). An unloaded namespace gives a message in Clojure. In ClojureScript it is created empty, with no message.

@@ -570,11 +570,54 @@
   (when-let [^js r (eval-region/cursor-range state)]
     (form-between state (.-from r) (.-to r))))
 
+(defn- children
+  "The child nodes of the syntax node `node`, in order."
+  [^js node]
+  (take-while some? (iterate #(.-nextSibling ^js %) (.-firstChild node))))
+
+(def ^:private not-forms
+  "The names of the syntax nodes in a list that are not forms of it.
+  They are its brackets, its operator, line comments and discarded forms, `#_`."
+  #{"(" ")" "Operator" "LineComment" "Discard"})
+
+(defn- rich-comment?
+  "Whether the syntax node `node` of `state` is a rich comment.
+  A rich comment is a list whose operator is the symbol `comment`."
+  [^js state ^js node]
+  (let [^js operator (second (children node))]
+    (and (= "List" (.-name node))
+         (some? operator)
+         (= "Operator" (.-name operator))
+         (= "comment" (.sliceDoc state (.-from operator) (.-to operator))))))
+
+(defn- inside-comment?
+  "Whether `pos` is inside the rich comment `node`.
+  Inside means past the `comment` symbol and before the closing bracket."
+  [^js node pos]
+  (let [kids  (children node)
+        ^js operator (second kids)
+        ^js close    (last kids)]
+    (and (> pos (.-to operator))
+         (or (not= ")" (.-name close)) (< pos (.-to close))))))
+
+(defn- form-in-comment
+  "The form among the children of the rich comment `node` that holds `pos`, or `nil`."
+  [^js node pos]
+  (some #(when (and (not (not-forms (.-name ^js %))) (<= (.-from ^js %) pos (.-to ^js %))) %)
+        (children node)))
+
 (defn top-level-form-at
-  "The top-level form at the cursor in `state`, as `{:code :line}`, or `nil` between forms."
+  "The top-level form at the cursor in `state`, as `{:code :line}`, or `nil` between forms.
+  In a rich comment, `(comment ...)`, it is the form inside it that holds the cursor, so its
+  forms are evaluated one by one, and `nil` between them. On the `comment` symbol or the
+  brackets it is the whole comment."
   [^js state]
   (when-let [^js node (eval-region/top-level-node state)]
-    (form-between state (.-from node) (.-to node))))
+    (let [pos (.. state -selection -main -head)]
+      (if (and (rich-comment? state node) (inside-comment? node pos))
+        (when-let [^js form (form-in-comment node pos)]
+          (form-between state (.-from form) (.-to form)))
+        (form-between state (.-from node) (.-to node))))))
 
 (defn symbol-at
   "The symbol at the cursor in `state`, or just before it, as a string, or `nil`."
